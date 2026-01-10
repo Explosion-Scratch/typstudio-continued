@@ -27,7 +27,7 @@
 
   const MIN_SIDEBAR_CONTENT = 150;
   const COLLAPSE_THRESHOLD = 120;
-  const MIN_PANE_WIDTH = 150;
+  const MIN_PANE_WIDTH = 500;
   const ICON_BAR_WIDTH = 48;
 
   const TYPST_EXTENSIONS = [".typ"];
@@ -257,14 +257,13 @@
       <div bind:this={contentAreaRef} class="content-area">
         {#if $shell.selectedFile}
           {#if isEditableFile}
-            {#if showEditor}
-              <div 
-                class="editor-container" 
-                style={$shell.viewMode === 'both' ? `width: ${editorWidth}px` : 'flex: 1'}
-              >
-                <Editor class="editor-pane" path={$shell.selectedFile} />
-              </div>
-            {/if}
+            <div 
+              class="editor-container" 
+              class:hidden={!showEditor}
+              style={$shell.viewMode === 'both' ? `width: ${editorWidth}px` : showEditor ? 'flex: 1' : ''}
+            >
+              <Editor class="editor-pane" path={$shell.selectedFile} />
+            </div>
             {#if isTypstFile}
               {#if $shell.viewMode === "both"}
                 <Resizer
@@ -391,13 +390,21 @@
 
   .editor-container {
     display: flex;
-    min-width: 150px;
+    min-width: 200px;
+    overflow: hidden;
+  }
+
+  .editor-container.hidden {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
     overflow: hidden;
   }
 
   .preview-container {
     display: flex;
-    min-width: 150px;
+    min-width: 200px;
     overflow: hidden;
   }
 

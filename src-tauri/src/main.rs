@@ -42,11 +42,13 @@ async fn main() {
             ipc::commands::typst_render,
             ipc::commands::typst_autocomplete,
             ipc::commands::typst_jump,
+            ipc::commands::typst_jump_from_cursor,
             ipc::commands::typst_list_packages,
             ipc::commands::typst_delete_package,
             ipc::commands::typst_install_package,
             ipc::commands::clipboard_paste,
-            ipc::commands::open_project
+            ipc::commands::open_project,
+            ipc::commands::export_pdf
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

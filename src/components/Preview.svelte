@@ -177,6 +177,30 @@
         }
       );
       cleanup.push(unsubscribeToggleVisibility);
+
+      const unsubscribeScrollToPos = await appWindow.listen<{ page: number; x: number; y: number }>(
+        "scroll_to_position_in_preview",
+        ({ payload }) => {
+          if (!container) return;
+          const pageElement = container.querySelector(`.preview-page[data-page="${payload.page}"]`);
+          if (pageElement) {
+            const pageRect = pageElement.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+
+            const pixelX = payload.x * zoom;
+            const pixelY = payload.y * zoom;
+
+            const absolutePageTop = pageRect.top - containerRect.top + container.scrollTop;
+            const absolutePageLeft = pageRect.left - containerRect.left + container.scrollLeft;
+
+            const targetTop = absolutePageTop + pixelY - container.clientHeight / 2;
+            const targetLeft = absolutePageLeft + pixelX - container.clientWidth / 2;
+
+            container.scrollTo({ top: targetTop, left: targetLeft, behavior: "smooth" });
+          }
+        }
+      );
+      cleanup.push(unsubscribeScrollToPos);
     })();
 
     window.addEventListener("keydown", handleKeyDown);

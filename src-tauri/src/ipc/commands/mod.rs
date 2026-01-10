@@ -76,7 +76,7 @@ pub fn project_path<R: Runtime, P: AsRef<Path>>(
 }
 
 #[tauri::command]
-pub fn open_project<R: Runtime>(
+pub async fn open_project<R: Runtime>(
     window: Window<R>,
     project_manager: State<'_, Arc<ProjectManager<R>>>,
     path: String,
@@ -89,6 +89,8 @@ pub fn open_project<R: Runtime>(
         message: Some("Opening project...".to_string()),
     });
     
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    
     let path = PathBuf::from(&path);
     let path = std::fs::canonicalize(&path).unwrap_or(path);
     
@@ -98,13 +100,17 @@ pub fn open_project<R: Runtime>(
         message: Some("Loading fonts...".to_string()),
     });
     
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    
     let project = Arc::new(Project::load_from_path(path));
     
     let _ = window.emit("loading_progress", LoadingProgressEvent {
-        stage: "Loading fonts".to_string(),
-        progress: 70,
-        message: Some("Loading fonts...".to_string()),
+        stage: "Finalizing".to_string(),
+        progress: 80,
+        message: Some("Finalizing...".to_string()),
     });
+    
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     
     project_manager.set_project(&window, Some(project));
     

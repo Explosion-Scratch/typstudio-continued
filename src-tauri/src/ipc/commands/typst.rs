@@ -314,6 +314,52 @@ pub async fn typst_jump<R: Runtime>(
 }
 
 #[derive(Serialize, Debug)]
+pub struct TypstDocumentPosition {
+    page: usize,
+    x: f64,
+    y: f64,
+}
+
+#[tauri::command]
+pub async fn typst_jump_from_cursor<R: Runtime>(
+    window: tauri::Window<R>,
+    project_manager: tauri::State<'_, Arc<ProjectManager<R>>>,
+    path: PathBuf,
+    content: String,
+    offset: usize,
+) -> Result<Option<TypstDocumentPosition>> {
+    let project = project(&window, &project_manager)?;
+    let world = project.world.lock().unwrap();
+    let cache = project.cache.read().unwrap();
+
+    let doc = cache.document.as_ref().ok_or(Error::Unknown)?;
+
+    let byte_offset = content
+        .char_indices()
+        .nth(offset)
+        .map(|a| a.0)
+        .unwrap_or(content.len());
+
+    let source_id = world
+        .slot_update(&*path, Some(content.clone()))
+        .map_err(Into::<Error>::into)?;
+
+    let source = world.source(source_id).map_err(Into::<Error>::into)?;
+
+    let positions = typst_ide::jump_from_cursor(doc, &source, byte_offset);
+
+    if let Some(position) = positions.first() {
+        Ok(Some(TypstDocumentPosition {
+            page: position.page.get().saturating_sub(1),
+            x: position.point.x.to_pt(),
+            y: position.point.y.to_pt(),
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+#[derive(Serialize, Debug)]
 pub struct InstalledPackage {
     pub namespace: String,
     pub name: String,

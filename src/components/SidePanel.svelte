@@ -62,6 +62,8 @@
     border-right: 1px solid var(--color-border);
     background: var(--color-bg-primary);
     height: 100%;
+    flex: 1;
+    min-width: 0;
   }
 
   .tab-bar {
@@ -71,6 +73,7 @@
     padding: var(--space-sm);
     border-right: 1px solid var(--color-border);
     background: var(--color-bg-secondary);
+    flex-shrink: 0;
   }
 
   .tab-button {

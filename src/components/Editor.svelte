@@ -5,7 +5,7 @@
 
   import { initMonaco } from "../lib/editor/monaco";
   import type { TypstCompileEvent } from "../lib/ipc";
-  import { compile, readFileText, writeFileText } from "../lib/ipc";
+  import { compile, readFileText, writeFileText, jumpFromCursor } from "../lib/ipc";
   import { appWindow } from "@tauri-apps/api/window";
   import { paste } from "$lib/ipc/clipboard";
   import { PreviewState, shell } from "$lib/stores";
@@ -55,6 +55,10 @@
   const handleCompile = async () => {
     const model = editorInstance?.getModel();
     if (model) {
+      const filePath = model.uri.path;
+      if (!filePath.endsWith(".typ")) {
+        return;
+      }
       const requestId = shell.nextCompileRequestId();
       lastCompileRequestId = requestId;
       shell.setPreviewState(PreviewState.Compiling);
@@ -70,6 +74,24 @@
   };
 
   const handleSaveDebounce = debounce(handleSave, 1000, { maxWait: 5000 });
+
+  const handleCursorJump = debounce(async () => {
+    if (editorInstance) {
+      const model = editorInstance.getModel();
+      const position = editorInstance.getPosition();
+      if (model && position && model.uri.path.endsWith(".typ")) {
+        const offset = model.getOffsetAt(position);
+        try {
+          const result = await jumpFromCursor(model.uri.path, model.getValue(), offset);
+          if (result) {
+            appWindow.emit("scroll_to_position_in_preview", result);
+          }
+        } catch (e) {
+          console.error("Failed to jump from cursor:", e);
+        }
+      }
+    }
+  }, 300);
 
   export const scrollToPosition = (line: number, column: number = 1) => {
     if (editorInstance) {
@@ -145,6 +167,7 @@
         const pos = getCursorPosition();
         if (pos) {
           appWindow.emit("editor_cursor_changed", pos);
+          handleCursorJump();
         }
       });
 

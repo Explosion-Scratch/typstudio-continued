@@ -87,3 +87,16 @@ export const deletePackage = (namespace: string, name: string, version: string):
 export const installPackage = (spec: string): Promise<void> =>
   invoke("typst_install_package", { spec });
 
+export interface TypstDocumentPosition {
+  page: number;
+  x: number;
+  y: number;
+}
+
+export const jumpFromCursor = (
+  path: string,
+  content: string,
+  offset: number
+): Promise<TypstDocumentPosition | null> =>
+  invoke<TypstDocumentPosition | null>("typst_jump_from_cursor", { path, content, offset });
+

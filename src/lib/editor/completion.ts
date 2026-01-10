@@ -14,6 +14,11 @@ export class TypstCompletionProvider implements languages.CompletionItemProvider
     context: languages.CompletionContext,
     token: CancellationToken
   ): Promise<languages.CompletionList> {
+    const filePath = model.uri.path;
+    if (!filePath.endsWith(".typ")) {
+      return { suggestions: [] };
+    }
+
     console.log("completing", position, context);
     const { offset: completionOffset, completions } = await autocomplete(
       model.uri.path,
