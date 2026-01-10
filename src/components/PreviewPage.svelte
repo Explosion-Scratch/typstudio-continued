@@ -9,7 +9,7 @@
   export let height: number;
   export let scale: number;
 
-  let canvas: HTMLCanvasElement;
+  let container: HTMLDivElement;
   let canRender = false;
   let isIntersecting = false;
   let nonce = 1;
@@ -17,11 +17,10 @@
 
   onMount(() => {
     const observer = new IntersectionObserver((entries) => {
-      // Don't update canRender when the preview page is no longer visible
       isIntersecting = entries[0].isIntersecting;
       if (isIntersecting) canRender = true;
     });
-    observer.observe(canvas);
+    observer.observe(container);
     return () => observer.disconnect();
   });
 
@@ -30,27 +29,19 @@
   };
 
   const update = async (updateHash: string, updateScale: number) => {
-    // adjust dimensions to account for device pixel ratio
-    const densityWidth = Math.floor(width * window.devicePixelRatio);
-    const densityHeight = Math.floor(height * window.devicePixelRatio);
-    const densityScale = updateScale * window.devicePixelRatio;
+    const res: TypstRenderResponse = await render(page, updateScale, nonce++);
 
-    const res: TypstRenderResponse = await render(page, densityScale, nonce++);
-
-    const img = new Image(res.width, res.height);
-    img.src = "data:image/png;base64," + res.image;
-    img.onload = () => {
-      // Prevent out-of-order rendering
-      if (res.nonce > lastNonce) {
-        lastNonce = res.nonce;
-        const ctx = canvas.getContext("2d");
-
-        canvas.width = densityWidth;
-        canvas.height = densityHeight;
-
-        ctx.drawImage(img, 0, 0, densityWidth, densityHeight);
+    if (res.nonce > lastNonce) {
+      lastNonce = res.nonce;
+      container.innerHTML = res.image;
+      
+      const svgEl = container.querySelector("svg");
+      if (svgEl) {
+        svgEl.style.width = "100%";
+        svgEl.style.height = "100%";
+        svgEl.style.display = "block";
       }
-    };
+    }
   };
 
   $: invalidateCanRender(hash, scale);
@@ -58,7 +49,24 @@
 </script>
 
 <div
-  class="bg-white shadow-md mx-auto"
-  style="height: {height}px; min-height: {height}px; width: {width}px; min-width: {width}px; box-sizing: border-box;">
-  <canvas class="bg-white w-full h-full" bind:this={canvas}></canvas>
-</div>
+  class="preview-page"
+  style="height: {height}px; min-height: {height}px; width: {width}px; min-width: {width}px;"
+  bind:this={container}
+></div>
+
+<style>
+  .preview-page {
+    background: white;
+    box-shadow: var(--shadow-md);
+    border-radius: 2px;
+    margin: 0 auto;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  .preview-page :global(svg) {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+</style>

@@ -1,11 +1,11 @@
 use crate::engine::{FontSearcher, FontSlot};
-use comemo::Prehashed;
+use typst::utils::LazyHash;
 use typst::text::FontBook;
-use typst::Library;
+use typst::{Library, LibraryExt};
 
 pub struct TypstEngine {
-    pub library: Prehashed<Library>,
-    pub fontbook: Prehashed<FontBook>,
+    pub library: LazyHash<Library>,
+    pub fontbook: LazyHash<FontBook>,
     pub fonts: Vec<FontSlot>,
 }
 
@@ -14,9 +14,11 @@ impl TypstEngine {
         let mut searcher = FontSearcher::new();
         searcher.search(&[]);
 
+
+
         Self {
-            library: Prehashed::new(Library::default()),
-            fontbook: Prehashed::new(searcher.book),
+            library: LazyHash::new(Library::default()),
+            fontbook: LazyHash::new(searcher.book),
             fonts: searcher.fonts,
         }
     }

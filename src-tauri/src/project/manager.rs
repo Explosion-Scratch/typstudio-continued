@@ -153,7 +153,7 @@ impl<R: Runtime> ProjectManager<R> {
                             config_write.apply(project);
                         }
                     } else {
-                        let mut world = project.world.lock().unwrap();
+                        let world = project.world.lock().unwrap();
                         let path = Path::new("/").join(relative);
                         match world.slot_update(&path, None) {
                             Ok(id) => {

@@ -1,35 +1,65 @@
 <script lang="ts">
-  import clsx from "clsx";
   import ExplorerNode from "./ExplorerNode.svelte";
   import { project, shell } from "$lib/stores";
   import { createFile } from "$lib/ipc";
-  import { PlusIcon } from "lucide-svelte";
-
-  const handleCreate = () => {
-    shell.createModal({
-      type: "input",
-      title: "Create file",
-      callback: (path) => {
-        if (path) {
-          createFile(path);
-        }
-      },
-    });
-  };
+  import { Plus } from "$lib/icons";
 </script>
 
-<div class={clsx("border-r border-neutral-700 p-3 select-none flex flex-col", $$props.class)}>
+<div class="explorer-tree">
   {#if $project}
-    <div class="flex flex-row mx-2 mt-1 mb-3 items-center">
-      <span class="text-lg font-bold block flex-1">Project</span>
-      <div class="flex flex-row rounded-md border border-neutral-700 overflow-clip">
-        <button class="p-1 transition-colors hover:bg-neutral-700" on:click={handleCreate}>
-          <PlusIcon class="w-4 h-4" />
-        </button>
-      </div>
+    <div class="tree-header">
+      <span class="tree-title">Files</span>
+      <button
+        class="icon-button"
+        on:click={() => {
+          shell.createModal({
+            type: "input",
+            title: "Create file",
+            placeholder: "filename.typ",
+            callback: (path) => {
+              if (path) createFile(path);
+            },
+          });
+        }}
+        title="New file"
+      >
+        <Plus size={14} weight="bold" />
+      </button>
     </div>
-    <div class="flex-1 min-h-0 overflow-auto">
+    <div class="tree-content">
       <ExplorerNode type="directory" path="/" />
     </div>
   {/if}
 </div>
+
+<style>
+  .explorer-tree {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  .tree-header {
+    display: flex;
+    align-items: center;
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .tree-title {
+    flex: 1;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .tree-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-sm);
+  }
+</style>

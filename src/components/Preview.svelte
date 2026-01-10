@@ -1,127 +1,244 @@
 <script lang="ts">
-
-  import clsx from "clsx";
   import PreviewPage from "./PreviewPage.svelte";
+  import CompileErrorDisplay from "./CompileErrorDisplay.svelte";
+  import ZoomControls from "./ZoomControls.svelte";
   import { onMount } from "svelte";
-  import type { TypstCompileEvent } from "../lib/ipc";
+  import type { TypstCompileEvent, TypstSourceDiagnostic } from "../lib/ipc";
   import { appWindow } from "@tauri-apps/api/window";
-
-  const scales = [0.5, 1.0, 1.25, 1.5, 2, 3, 4];
+  import { shell, PreviewState } from "$lib/stores";
+  import { fade } from "svelte/transition";
 
   let container: HTMLDivElement;
+  let pagesContainer: HTMLDivElement;
   let previousEvent: MouseEvent | undefined;
 
-  let isMouseDown = false;
-  let scaleIndex = 1; // scales[1] = 100%
-  let scale: number;
-  $: scale = scales[scaleIndex];
+  let isDragging = false;
+  let mouseDownPosition: { x: number; y: number; time: number } | null = null;
+  let zoom = 1.0;
+  let minZoom = 0.25;
+  let maxZoom = 4.0;
+
+  const CLICK_THRESHOLD_DISTANCE = 5;
+  const CLICK_THRESHOLD_TIME = 200;
 
   let pages = 0;
-  let hash = null;
+  let hash: string | null = null;
+  let previousHash: string | null = null;
   let width: number;
   let height: number;
+  let currentErrors: TypstSourceDiagnostic[] = [];
 
   let isVisible: boolean = true;
+  let isFading = false;
 
   const handleMouseDown = (event: MouseEvent) => {
-    event.preventDefault();
-    isMouseDown = true;
+    if (event.button === 0) {
+      mouseDownPosition = {
+        x: event.clientX,
+        y: event.clientY,
+        time: Date.now(),
+      };
+      isDragging = false;
+    }
   };
 
   const handleMouseUp = (event: MouseEvent) => {
-    event.preventDefault();
-    isMouseDown = false;
+    if (mouseDownPosition) {
+      const dx = event.clientX - mouseDownPosition.x;
+      const dy = event.clientY - mouseDownPosition.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const elapsed = Date.now() - mouseDownPosition.time;
+
+      if (distance < CLICK_THRESHOLD_DISTANCE && elapsed < CLICK_THRESHOLD_TIME) {
+        handlePreviewClick(event);
+      }
+    }
+    mouseDownPosition = null;
+    isDragging = false;
+    previousEvent = undefined;
+  };
+
+  const handlePreviewClick = (event: MouseEvent) => {
+    console.log("Preview clicked at", event.clientX, event.clientY);
   };
 
   const handleMove = (event: MouseEvent) => {
-    event.preventDefault();
-    if (previousEvent && isMouseDown) {
-      const deltaX = previousEvent.screenX - event.screenX;
-      const deltaY = previousEvent.screenY - event.screenY;
+    if (mouseDownPosition) {
+      const dx = event.clientX - mouseDownPosition.x;
+      const dy = event.clientY - mouseDownPosition.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
 
-      container.scrollBy({ left: deltaX, top: deltaY });
+      if (distance >= CLICK_THRESHOLD_DISTANCE) {
+        isDragging = true;
+      }
+
+      if (isDragging && previousEvent) {
+        const deltaX = previousEvent.screenX - event.screenX;
+        const deltaY = previousEvent.screenY - event.screenY;
+        container.scrollBy({ left: deltaX, top: deltaY });
+      }
     }
     previousEvent = event;
   };
 
   const handleWheel = (event: WheelEvent) => {
-    if (event.ctrlKey) {
+    if (event.ctrlKey || event.metaKey) {
       event.preventDefault();
-
-      if (event.deltaY < 0) { // zoom in
-        scale = scales[scaleIndex = Math.min(scaleIndex + 1, scales.length - 1)];
-      } else if (event.deltaY > 0) { // zoom out
-        scale = scales[scaleIndex = Math.max(scaleIndex - 1, 0)];
-      }
     }
   };
 
   const handleKeyDown = (event: KeyboardEvent) => {
-    if (event.ctrlKey) {
+    if (event.metaKey || event.ctrlKey) {
       switch (event.key) {
-        // Zoom in
         case "=":
         case "+":
           event.preventDefault();
-          scale = scales[scaleIndex = Math.min(scaleIndex + 1, scales.length - 1)];
+          zoom = Math.min(maxZoom, zoom * 1.2);
           break;
         case "-":
           event.preventDefault();
-          scale = scales[scaleIndex = Math.max(scaleIndex - 1, 0)];
+          zoom = Math.max(minZoom, zoom / 1.2);
+          break;
+        case "0":
+          event.preventDefault();
+          zoom = 1.0;
           break;
       }
     }
   };
 
-  onMount(async () => {
-    const unsubscribeCompile = await appWindow.listen<TypstCompileEvent>(
-      "typst_compile",
-      ({ _, payload }) => {
-        const { document } = payload;
-        if (document) {
-          pages = document.pages;
-          hash = document.hash;
-          width = document.width;
-          height = document.height;
-        }
-      }
-    );
+  const handleZoomIn = () => {
+    zoom = Math.min(maxZoom, zoom * 1.2);
+  };
 
-    const unsubscribeToggleVisibility = await appWindow.listen<never>(
-      "toggle_preview_visibility",
-      () => {
-        isVisible = !isVisible;
-      }
-    );
+  const handleZoomOut = () => {
+    zoom = Math.max(minZoom, zoom / 1.2);
+  };
+
+  const handleZoomReset = () => {
+    zoom = 1.0;
+  };
+
+  const handleErrorClick = (error: TypstSourceDiagnostic) => {
+    appWindow.emit("scroll_to_position", { position: error.range.start });
+  };
+
+  onMount(() => {
+    let cleanup: (() => void)[] = [];
+
+    (async () => {
+      const unsubscribeCompile = await appWindow.listen<TypstCompileEvent>(
+        "typst_compile",
+        ({ payload }) => {
+          const { document, diagnostics } = payload;
+
+          currentErrors = diagnostics || [];
+          shell.setCurrentErrors(currentErrors);
+
+          if (document) {
+            previousHash = hash;
+            pages = document.pages;
+            hash = document.hash;
+            width = document.width;
+            height = document.height;
+
+            if (previousHash && previousHash !== hash) {
+              isFading = true;
+              setTimeout(() => {
+                isFading = false;
+              }, 150);
+            }
+          }
+        }
+      );
+      cleanup.push(unsubscribeCompile);
+
+      const unsubscribeToggleVisibility = await appWindow.listen<never>(
+        "toggle_preview_visibility",
+        () => {
+          isVisible = !isVisible;
+        }
+      );
+      cleanup.push(unsubscribeToggleVisibility);
+    })();
 
     window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      unsubscribeCompile();
-      unsubscribeToggleVisibility();
+      cleanup.forEach((fn) => fn());
       window.removeEventListener("keydown", handleKeyDown);
     };
   });
 </script>
 
 {#if isVisible}
-  <div
-    bind:this={container}
-    on:mousemove={handleMove}
-    on:mousedown={handleMouseDown}
-    on:mouseup={handleMouseUp}
-    on:mouseleave={handleMouseUp}
-    on:wheel={handleWheel}
-    class={clsx("flex flex-col overflow-auto bg-neutral-700 p-4 gap-4", $$props.class)}
-  >
-    {#each Array(pages) as _, i}
-      <PreviewPage
-        page={i}
-        {hash}
-        width={Math.floor(width * scale)}
-        height={Math.floor(height * scale)}
-        {scale}
+  {#if $shell.previewState === PreviewState.CompileError && currentErrors.length > 0}
+    <CompileErrorDisplay errors={currentErrors} onErrorClick={handleErrorClick} />
+  {:else}
+    <div
+      bind:this={container}
+      on:mousemove={handleMove}
+      on:mousedown={handleMouseDown}
+      on:mouseup={handleMouseUp}
+      on:mouseleave={handleMouseUp}
+      on:wheel={handleWheel}
+      class="preview-container"
+      class:dragging={isDragging}
+      role="region"
+      aria-label="Document preview"
+    >
+      <div
+        bind:this={pagesContainer}
+        class="pages-wrapper"
+        class:fading={isFading}
+      >
+        {#each Array(pages) as _, i}
+          {#if hash}
+            <PreviewPage
+              page={i}
+              hash={hash}
+              width={Math.floor(width * zoom)}
+              height={Math.floor(height * zoom)}
+              scale={zoom}
+            />
+          {/if}
+        {/each}
+      </div>
+      <ZoomControls
+        {zoom}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onZoomReset={handleZoomReset}
       />
-    {/each}
-  </div>
+    </div>
+  {/if}
 {/if}
+
+<style>
+  .preview-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    background: var(--color-bg-secondary);
+    padding: var(--space-xl);
+    cursor: default;
+    position: relative;
+    touch-action: pan-x pan-y;
+  }
+
+  .preview-container.dragging {
+    cursor: grabbing;
+  }
+
+  .pages-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+    transition: opacity 150ms ease;
+  }
+
+  .pages-wrapper.fading {
+    opacity: 0.7;
+  }
+</style>

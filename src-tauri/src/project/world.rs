@@ -1,66 +1,73 @@
 use crate::engine::TypstEngine;
 use chrono::Datelike;
-use comemo::Prehashed;
-use std::cell::{OnceCell, RefCell, RefMut};
+use typst::utils::LazyHash;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use typst::diag::{FileError, FileResult, PackageError, PackageResult};
 use typst::foundations::{Bytes, Datetime};
 use typst::syntax::package::PackageSpec;
 use typst::syntax::{FileId, Source, VirtualPath};
 use typst::text::{Font, FontBook};
-use typst::{Library, World};
+use typst::Library;
+use typst::World;
+use typst_ide::IdeWorld;
 
 pub struct ProjectWorld {
     root: PathBuf,
     engine: Arc<TypstEngine>,
 
-    /// Map of slots, identified by [FileId]
-    slots: RefCell<HashMap<FileId, PathSlot>>,
+    slots: RwLock<HashMap<FileId, PathSlot>>,
 
-    /// This should be set upon project initialization. If the
-    /// main source is set to [Option::None], then the compilation
-    /// should not occur. Otherwise, the code will panic.
     main: Option<FileId>,
 }
 
 impl ProjectWorld {
     pub fn slot_update<P: AsRef<Path>>(
-        &mut self,
+        &self,
         path: P,
         content: Option<String>,
     ) -> FileResult<FileId> {
         let vpath = VirtualPath::new(path);
         let id = FileId::new(None, vpath.clone());
-        let mut slot = self.slot(id)?;
-
-        if let Some(res) = slot.buffer.get_mut() {
-            // TODO: Avoid cloning?
-            let bytes = self.take_or_read_bytes(&vpath, content.clone())?;
-            match res {
-                Ok(b) => {
-                    *b = bytes;
+        
+        let mut slots = self.slots.write().unwrap();
+        
+        if let Entry::Vacant(_) = &slots.entry(id) {
+            let buf;
+            let mut root = &self.root;
+            if let Some(spec) = id.package() {
+                buf = Self::prepare_package(spec)?;
+                root = &buf;
+            }
+            let path = id.vpath().resolve(root).ok_or(FileError::AccessDenied)?;
+            slots.insert(id, PathSlot {
+                id,
+                path,
+                source: RwLock::new(None),
+                buffer: RwLock::new(None),
+            });
+        }
+        
+        let slot = slots.get(&id).unwrap();
+        
+        if let Some(ref content_str) = content {
+            let bytes = Bytes::new(content_str.as_bytes().to_vec());
+            *slot.buffer.write().unwrap() = Some(Ok(bytes));
+            
+            let mut source_guard = slot.source.write().unwrap();
+            match source_guard.as_mut() {
+                Some(Ok(src)) => {
+                    src.replace(content_str);
                 }
-                Err(_) => {
-                    *res = Ok(bytes);
+                _ => {
+                    *source_guard = Some(Ok(Source::new(id, content_str.clone())));
                 }
             }
-        };
-        if let Some(res) = slot.source.get_mut() {
-            let content = self.take_or_read(&vpath, content)?;
-            match res {
-                Ok(src) => {
-                    // TODO: incremental edits
-                    src.replace(&content);
-                }
-                Err(_) => {
-                    *res = Ok(Source::new(id, content));
-                }
-            }
-        };
+        }
+        
         Ok(id)
     }
 
@@ -80,35 +87,9 @@ impl ProjectWorld {
         Self {
             root,
             engine: Arc::new(TypstEngine::new()),
-            slots: RefCell::default(),
+            slots: RwLock::new(HashMap::new()),
             main: None,
         }
-    }
-
-    fn slot(&self, id: FileId) -> FileResult<RefMut<PathSlot>> {
-        let mut path = PathBuf::new();
-        let mut slots = self.slots.borrow_mut();
-        if let Entry::Vacant(_) = &slots.entry(id) {
-            let buf;
-            let mut root = &self.root;
-            if let Some(spec) = id.package() {
-                buf = Self::prepare_package(spec)?;
-                root = &buf;
-            }
-
-            // This will disallow paths outside of the root directory. Note that this will
-            // still allow symlinks.
-            path = id.vpath().resolve(root).ok_or(FileError::AccessDenied)?;
-        }
-
-        Ok(RefMut::map(slots, |slots| {
-            slots.entry(id).or_insert_with(|| PathSlot {
-                id,
-                path,
-                source: OnceCell::new(),
-                buffer: OnceCell::new(),
-            })
-        }))
     }
 
     fn take_or_read(&self, vpath: &VirtualPath, content: Option<String>) -> FileResult<String> {
@@ -118,21 +99,6 @@ impl ProjectWorld {
 
         let path = vpath.resolve(&self.root).ok_or(FileError::AccessDenied)?;
         fs::read_to_string(&path).map_err(|e| FileError::from_io(e, &path))
-    }
-
-    fn take_or_read_bytes(
-        &self,
-        vpath: &VirtualPath,
-        content: Option<String>,
-    ) -> FileResult<Bytes> {
-        if let Some(content) = content {
-            return Ok(Bytes::from(content.into_bytes()));
-        }
-
-        let path = vpath.resolve(&self.root).ok_or(FileError::AccessDenied)?;
-        fs::read(&path)
-            .map_err(|e| FileError::from_io(e, &path))
-            .map(Bytes::from)
     }
 
     fn prepare_package(spec: &PackageSpec) -> PackageResult<PathBuf> {
@@ -159,40 +125,82 @@ impl ProjectWorld {
     }
 }
 
+unsafe impl Send for ProjectWorld {}
+unsafe impl Sync for ProjectWorld {}
+
 impl World for ProjectWorld {
-    fn library(&self) -> &Prehashed<Library> {
+    fn library(&self) -> &LazyHash<Library> {
         &self.engine.library
     }
 
-    fn book(&self) -> &Prehashed<FontBook> {
+    fn book(&self) -> &LazyHash<FontBook> {
         &self.engine.fontbook
     }
 
-    fn main(&self) -> Source {
-        self.source(self.main.expect("the main file must be set"))
-            .expect("unable to load the main file") // TODO: Handle this better
-            .clone()
+    fn main(&self) -> FileId {
+        self.main.expect("the main file must be set")
     }
 
     fn source(&self, id: FileId) -> FileResult<Source> {
-        self.slot(id)?.source()
+        let slots = self.slots.read().unwrap();
+        if let Some(slot) = slots.get(&id) {
+            return slot.source();
+        }
+        drop(slots);
+        
+        let mut slots = self.slots.write().unwrap();
+        let buf;
+        let mut root = &self.root;
+        if let Some(spec) = id.package() {
+            buf = Self::prepare_package(spec)?;
+            root = &buf;
+        }
+        let path = id.vpath().resolve(root).ok_or(FileError::AccessDenied)?;
+        
+        let slot = slots.entry(id).or_insert_with(|| PathSlot {
+            id,
+            path,
+            source: RwLock::new(None),
+            buffer: RwLock::new(None),
+        });
+        slot.source()
     }
 
     fn file(&self, id: FileId) -> FileResult<Bytes> {
-        self.slot(id)?.file()
+        let slots = self.slots.read().unwrap();
+        if let Some(slot) = slots.get(&id) {
+            return slot.file();
+        }
+        drop(slots);
+        
+        let mut slots = self.slots.write().unwrap();
+        let buf;
+        let mut root = &self.root;
+        if let Some(spec) = id.package() {
+            buf = Self::prepare_package(spec)?;
+            root = &buf;
+        }
+        let path = id.vpath().resolve(root).ok_or(FileError::AccessDenied)?;
+        
+        let slot = slots.entry(id).or_insert_with(|| PathSlot {
+            id,
+            path,
+            source: RwLock::new(None),
+            buffer: RwLock::new(None),
+        });
+        slot.file()
     }
 
     fn font(&self, id: usize) -> Option<Font> {
         let slot = &self.engine.fonts[id];
         slot.font
             .get_or_init(|| {
-                let data = fs::read(&slot.path).map(Bytes::from).ok()?;
+                let data = fs::read(&slot.path).map(|v| Bytes::new(v)).ok()?;
                 Font::new(data, slot.index)
             })
             .clone()
     }
 
-    // TODO: Should probably cache this per compilation, to ensure consistent datetime throughout the document
     fn today(&self, offset: Option<i64>) -> Option<Datetime> {
         let dt = match offset {
             None => chrono::Local::now().naive_local(),
@@ -209,29 +217,88 @@ impl World for ProjectWorld {
 struct PathSlot {
     id: FileId,
     path: PathBuf,
-    source: OnceCell<FileResult<Source>>,
-    buffer: OnceCell<FileResult<Bytes>>,
+    source: RwLock<Option<FileResult<Source>>>,
+    buffer: RwLock<Option<FileResult<Bytes>>>,
 }
 
 impl PathSlot {
     fn source(&self) -> FileResult<Source> {
-        self.source
-            .get_or_init(|| {
-                let text = fs::read_to_string(&self.path)
-                    .map_err(|e| FileError::from_io(e, &self.path))?;
-                Ok(Source::new(self.id, text))
-            })
-            .clone()
+        let guard = self.source.read().unwrap();
+        if let Some(ref result) = *guard {
+            return result.clone();
+        }
+        drop(guard);
+        
+        let mut guard = self.source.write().unwrap();
+        if let Some(ref result) = *guard {
+            return result.clone();
+        }
+        
+        let result = fs::read_to_string(&self.path)
+            .map_err(|e| FileError::from_io(e, &self.path))
+            .map(|text| Source::new(self.id, text));
+        *guard = Some(result.clone());
+        result
     }
 
     fn file(&self) -> FileResult<Bytes> {
-        // TODO: Unsure whether buffer should be implemented this way. This may cause a lot of memory usage on projects with a lot of large files.
-        self.buffer
-            .get_or_init(|| {
-                fs::read(&self.path)
-                    .map(Bytes::from)
-                    .map_err(|e| FileError::from_io(e, &self.path))
-            })
-            .clone()
+        let guard = self.buffer.read().unwrap();
+        if let Some(ref result) = *guard {
+            return result.clone();
+        }
+        drop(guard);
+        
+        let mut guard = self.buffer.write().unwrap();
+        if let Some(ref result) = *guard {
+            return result.clone();
+        }
+        
+        let result = fs::read(&self.path)
+            .map(|v| Bytes::new(v))
+            .map_err(|e| FileError::from_io(e, &self.path));
+        *guard = Some(result.clone());
+        result
+    }
+}
+
+impl IdeWorld for ProjectWorld {
+    fn upcast(&self) -> &dyn World {
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_compile_with_new_computer_modern() {
+        let _ = env_logger::builder().is_test(true).try_init();
+        
+        // 1. Initialize world
+        let root = PathBuf::from(".");
+        let mut world = ProjectWorld::new(root);
+        
+        // 2. Set main file content
+        let content = r#"#set text(font: "New Computer Modern")
+Hello World"#;
+        let path = PathBuf::from("main.typ");
+        
+        world.slot_update(&path, Some(content.to_string())).unwrap();
+        world.set_main_path(typst::syntax::VirtualPath::new("main.typ"));
+        
+        // 3. Compile
+        let result = typst::compile::<typst::layout::PagedDocument>(&world);
+        
+        if !result.warnings.is_empty() {
+             println!("Warnings: {:?}", result.warnings);
+        }
+
+        // 4. Assert success and NO font warnings
+        let font_missing = result.warnings.iter().any(|w| w.message.contains("font family not found") || w.message.contains("default font"));
+        assert!(!font_missing, "New Computer Modern should be found. Warnings: {:?}", result.warnings);
+        
+        assert!(result.output.is_ok(), "Compilation failed");
     }
 }

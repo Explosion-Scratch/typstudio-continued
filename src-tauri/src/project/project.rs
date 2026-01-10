@@ -3,11 +3,12 @@ use log::debug;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicU64;
 use std::sync::{Mutex, RwLock};
 use std::{fs, io};
 use thiserror::Error;
 use typst::diag::{FileError, FileResult};
-use typst::model::Document;
+use typst::layout::PagedDocument;
 use typst::syntax::VirtualPath;
 
 const PATH_PROJECT_CONFIG_FILE: &str = ".typstudio/project.json";
@@ -17,11 +18,12 @@ pub struct Project {
     pub world: Mutex<ProjectWorld>,
     pub cache: RwLock<ProjectCache>,
     pub config: RwLock<ProjectConfig>,
+    pub current_compile_request_id: AtomicU64,
 }
 
 #[derive(Default)]
 pub struct ProjectCache {
-    pub document: Option<Document>,
+    pub document: Option<PagedDocument>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Hash)]
@@ -96,6 +98,7 @@ impl Project {
             cache: RwLock::new(Default::default()),
             config: RwLock::new(config),
             root: path,
+            current_compile_request_id: AtomicU64::new(0),
         }
     }
 }

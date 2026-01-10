@@ -5,19 +5,17 @@ use crate::ipc::{
     TypstCompileEvent, TypstDiagnosticSeverity, TypstDocument, TypstSourceDiagnostic,
 };
 use crate::project::ProjectManager;
-use base64::Engine;
 use log::debug;
 use serde::Serialize;
 use serde_repr::Serialize_repr;
 use siphasher::sip128::{Hasher128, SipHasher};
 use std::hash::Hash;
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Instant;
 use tauri::Runtime;
 use typst::diag::Severity;
-use typst::eval::Tracer;
-use typst::visualize::Color;
 use typst::World;
 use typst_ide::{Completion, CompletionKind};
 
@@ -56,6 +54,7 @@ impl From<Completion> for TypstCompletion {
                 CompletionKind::Constant => TypstCompletionKind::Constant,
                 CompletionKind::Symbol(_) => TypstCompletionKind::Symbol,
                 CompletionKind::Type => TypstCompletionKind::Type,
+                _ => TypstCompletionKind::Syntax,
             },
             label: value.label.to_string(),
             apply: value.apply.map(|s| s.to_string()),
@@ -70,8 +69,11 @@ pub async fn typst_compile<R: Runtime>(
     project_manager: tauri::State<'_, Arc<ProjectManager<R>>>,
     path: PathBuf,
     content: String,
+    request_id: u64,
 ) -> Result<()> {
     let project = project(&window, &project_manager)?;
+
+    project.current_compile_request_id.store(request_id, Ordering::SeqCst);
 
     let mut world = project.world.lock().unwrap();
     let source_id = world
@@ -86,11 +88,17 @@ pub async fn typst_compile<R: Runtime>(
         }
     }
 
-    debug!("compiling {:?}: {:?}", path, project);
+    debug!("compiling {:?}: {:?} (request_id: {})", path, project, request_id);
     let now = Instant::now();
-    let mut tracer = Tracer::new();
-    match typst::compile(&*world, &mut tracer) {
+    let result = typst::compile::<typst::layout::PagedDocument>(&*world);
+    match result.output {
         Ok(doc) => {
+            let current_request = project.current_compile_request_id.load(Ordering::SeqCst);
+            if current_request != request_id {
+                debug!("skipping stale compile result for request {} (current: {})", request_id, current_request);
+                return Ok(());
+            }
+
             let elapsed = now.elapsed();
             debug!(
                 "compilation succeeded for {:?} in {:?} ms",
@@ -106,8 +114,6 @@ pub async fn typst_compile<R: Runtime>(
             }
             let hash = hex::encode(hasher.finish128().as_bytes());
 
-            // Assume all pages have the same size
-            // TODO: Improve this?
             let first_page = &doc.pages[0];
             let width = first_page.frame.width();
             let height = first_page.frame.height();
@@ -128,6 +134,12 @@ pub async fn typst_compile<R: Runtime>(
             );
         }
         Err(diagnostics) => {
+            let current_request = project.current_compile_request_id.load(Ordering::SeqCst);
+            if current_request != request_id {
+                debug!("skipping stale compile error for request {} (current: {})", request_id, current_request);
+                return Ok(());
+            }
+
             debug!(
                 "compilation failed with {:?} diagnostics",
                 diagnostics.len()
@@ -188,22 +200,24 @@ pub async fn typst_render<R: Runtime>(
     let cache = project.cache.read().unwrap();
     if let Some(p) = cache.document.as_ref().and_then(|doc| doc.pages.get(page)) {
         let now = Instant::now();
-        let bmp = typst_render::render(&p.frame, scale, Color::WHITE);
-        if let Ok(image) = bmp.encode_png() {
-            let elapsed = now.elapsed();
-            debug!(
-                "rendering complete for page {} in {} ms",
-                page,
-                elapsed.as_millis()
-            );
-            let b64 = base64::engine::general_purpose::STANDARD.encode(image);
-            return Ok(TypstRenderResponse {
-                image: b64,
-                width: bmp.width(),
-                height: bmp.height(),
-                nonce,
-            });
-        }
+        
+        let svg = typst_svg::svg(p);
+        let elapsed = now.elapsed();
+        debug!(
+            "SVG rendering complete for page {} in {} ms",
+            page,
+            elapsed.as_millis()
+        );
+        
+        let width = (p.frame.width().to_pt() * scale as f64) as u32;
+        let height = (p.frame.height().to_pt() * scale as f64) as u32;
+        
+        return Ok(TypstRenderResponse {
+            image: svg,
+            width,
+            height,
+            nonce,
+        });
     }
 
     Err(Error::Unknown)
@@ -219,7 +233,7 @@ pub async fn typst_autocomplete<R: Runtime>(
     explicit: bool,
 ) -> Result<TypstCompleteResponse> {
     let project = project(&window, &project_manager)?;
-    let mut world = project.world.lock().unwrap();
+    let world = project.world.lock().unwrap();
 
     let offset = content
         .char_indices()
@@ -227,7 +241,6 @@ pub async fn typst_autocomplete<R: Runtime>(
         .map(|a| a.0)
         .unwrap_or(content.len());
 
-    // TODO: Improve error typing
     let source_id = world
         .slot_update(&*path, Some(content.clone()))
         .map_err(Into::<Error>::into)?;

@@ -49,8 +49,8 @@ export interface TypstCompleteResponse {
   completions: TypstCompletion[];
 }
 
-export const compile = (path: string, content: string): Promise<TypstRenderResponse> =>
-  invoke<TypstRenderResponse>("typst_compile", { path, content });
+export const compile = (path: string, content: string, requestId: number): Promise<TypstRenderResponse> =>
+  invoke<TypstRenderResponse>("typst_compile", { path, content, requestId });
 
 export const render = (page: number, scale: number, nonce: number): Promise<TypstRenderResponse> =>
   invoke<TypstRenderResponse>("typst_render", { page, scale, nonce });

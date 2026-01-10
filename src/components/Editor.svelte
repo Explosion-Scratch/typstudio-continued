@@ -1,139 +1,217 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { editor as editorType } from "monaco-editor";
+  import type { editor } from "monaco-editor";
   import debounce from "lodash/debounce";
 
   import { initMonaco } from "../lib/editor/monaco";
   import type { TypstCompileEvent } from "../lib/ipc";
   import { compile, readFileText, writeFileText } from "../lib/ipc";
   import { appWindow } from "@tauri-apps/api/window";
-  import ICodeEditor = editorType.ICodeEditor;
-  import IModelContentChangedEvent = editorType.IModelContentChangedEvent;
-  import IModelChangedEvent = editorType.IModelChangedEvent;
-  import IMarkerData = editorType.IMarkerData;
   import { paste } from "$lib/ipc/clipboard";
-  import { throttle } from "$lib/fn";
   import { PreviewState, shell } from "$lib/stores";
+  import { extractOutlineFromSource } from "$lib/outline";
+
+  type ICodeEditor = editor.ICodeEditor;
+  type IModelContentChangedEvent = editor.IModelContentChangedEvent;
+  type IModelChangedEvent = editor.IModelChangedEvent;
+  type IMarkerData = editor.IMarkerData;
 
   let divEl: HTMLDivElement;
-  let editor: ICodeEditor;
+  let editorInstance: ICodeEditor;
   const monacoImport = import("monaco-editor");
 
   export let path: string;
 
-  const handleCompile = async () => {
-    const model = editor.getModel();
-    if (model) {
-      shell.setPreviewState(PreviewState.Compiling);
+  let isTyping = false;
+  let lastCompileRequestId = 0;
 
-      // Removing the preceding slash
-      await compile(model.uri.path, model.getValue());
+  const updateOutline = () => {
+    const model = editorInstance?.getModel();
+    if (model) {
+      const content = model.getValue();
+      const outline = extractOutlineFromSource(content);
+      shell.setDocumentOutline(outline);
     }
   };
-  const handleSave = () => {
-    const model = editor.getModel();
+
+  const updateOutlineDebounced = debounce(updateOutline, 300);
+
+  const clearMarkersWhileTyping = () => {
+    if (!isTyping) {
+      isTyping = true;
+      const model = editorInstance?.getModel();
+      if (model) {
+        import("monaco-editor").then((m) => {
+          m.editor.setModelMarkers(model, "owner", []);
+        });
+      }
+    }
+  };
+
+  const markTypingDone = debounce(() => {
+    isTyping = false;
+  }, 300);
+
+  const handleCompile = async () => {
+    const model = editorInstance?.getModel();
     if (model) {
-      // Removing the preceding slash
+      const requestId = shell.nextCompileRequestId();
+      lastCompileRequestId = requestId;
+      shell.setPreviewState(PreviewState.Compiling);
+      await compile(model.uri.path, model.getValue(), requestId);
+    }
+  };
+
+  const handleCompileDebounced = debounce(handleCompile, 50);
+
+  const handleSave = () => {
+    const model = editorInstance.getModel();
+    if (model) {
       writeFileText(model.uri.path, model.getValue());
     }
   };
 
-  const handleCompileThrottle = throttle(handleCompile);
   const handleSaveDebounce = debounce(handleSave, 1000, { maxWait: 5000 });
 
-  onMount(async () => {
-    const EditorWorker = await import("monaco-editor/esm/vs/editor/editor.worker?worker");
-    await initMonaco;
+  export const scrollToLine = (line: number) => {
+    if (editorInstance) {
+      editorInstance.revealLineInCenter(line);
+      editorInstance.setPosition({ lineNumber: line, column: 1 });
+      editorInstance.focus();
+    }
+  };
 
-    // @ts-ignore
-    self.MonacoEnvironment = {
-      getWorker: function (_moduleId: any, label: string) {
-        return new EditorWorker.default();
-      },
-    };
+  export const getCursorPosition = () => {
+    if (editorInstance) {
+      const position = editorInstance.getPosition();
+      const model = editorInstance.getModel();
+      if (position && model) {
+        return {
+          line: position.lineNumber,
+          column: position.column,
+          offset: model.getOffsetAt(position),
+        };
+      }
+    }
+    return null;
+  };
 
-    editor = (await monacoImport).editor.create(divEl, {
-      lineHeight: 1.8,
-      automaticLayout: true,
-      readOnly: true,
-      folding: true,
-      quickSuggestions: false,
-      wordWrap: "on",
-      unicodeHighlight: { ambiguousCharacters: false },
-    });
+  onMount(() => {
+    let cleanup: (() => void)[] = [];
 
-    editor.onDidChangeModel((e: IModelChangedEvent) => {
-      handleCompileThrottle();
-    });
-    editor.onDidChangeModelContent((e: IModelContentChangedEvent) => {
-      // Compile will update the source file directly in the memory without
-      // writing to the file system first, this will reduce the preview delay.
-      handleCompileThrottle();
-      handleSaveDebounce();
-    });
+    (async () => {
+      const EditorWorker = await import("monaco-editor/esm/vs/editor/editor.worker?worker");
+      await initMonaco;
+
+      (self as unknown as { MonacoEnvironment: unknown }).MonacoEnvironment = {
+        getWorker: function (_moduleId: unknown, label: string) {
+          return new EditorWorker.default();
+        },
+      };
+
+      editorInstance = (await monacoImport).editor.create(divEl, {
+        lineHeight: 1.8,
+        automaticLayout: true,
+        readOnly: true,
+        folding: true,
+        quickSuggestions: false,
+        wordWrap: "on",
+        unicodeHighlight: { ambiguousCharacters: false },
+        padding: { top: 16 },
+        minimap: { enabled: false },
+        fontFamily: "var(--font-mono)",
+        fontSize: 13,
+        renderLineHighlight: "gutter",
+        scrollbar: {
+          vertical: "auto",
+          horizontal: "auto",
+          verticalScrollbarSize: 8,
+          horizontalScrollbarSize: 8,
+        },
+      });
+
+      editorInstance.onDidChangeModel((e: IModelChangedEvent) => {
+        handleCompileDebounced();
+        updateOutline();
+      });
+
+      editorInstance.onDidChangeModelContent((e: IModelContentChangedEvent) => {
+        clearMarkersWhileTyping();
+        markTypingDone();
+        handleCompileDebounced();
+        handleSaveDebounce();
+        updateOutlineDebounced();
+      });
+
+      editorInstance.onDidChangeCursorPosition(() => {
+        const pos = getCursorPosition();
+        if (pos) {
+          appWindow.emit("editor_cursor_changed", pos);
+        }
+      });
+
+      const unsubscribeCompile = await appWindow.listen<TypstCompileEvent>("typst_compile", ({ payload }) => {
+        const { document, diagnostics } = payload;
+        const model = editorInstance.getModel();
+        if (model && diagnostics && !isTyping) {
+          import("monaco-editor").then((m) => {
+            const markers: IMarkerData[] = diagnostics.map(({ range, severity, message, hints }) => {
+              const start = model.getPositionAt(range.start);
+              const end = model.getPositionAt(range.end);
+              return {
+                startLineNumber: start.lineNumber,
+                startColumn: start.column,
+                endLineNumber: end.lineNumber,
+                endColumn: end.column,
+                message: message + "\n" + hints.map((hint) => `hint: ${hint}`).join("\n"),
+                severity: severity === "error" ? m.MarkerSeverity.Error : m.MarkerSeverity.Warning,
+              };
+            });
+            m.editor.setModelMarkers(model, "owner", markers);
+          });
+        }
+        if (document) {
+          shell.setPreviewState(PreviewState.Idle);
+        } else {
+          shell.setPreviewState(PreviewState.CompileError);
+        }
+      });
+      cleanup.push(unsubscribeCompile);
+
+      const unsubscribeJumpTo = await appWindow.listen<{ line: number }>("jump_to_line", ({ payload }) => {
+        scrollToLine(payload.line);
+      });
+      cleanup.push(unsubscribeJumpTo);
+    })();
 
     return () => {
-      editor.dispose();
+      cleanup.forEach((fn) => fn());
+      if (editorInstance) editorInstance.dispose();
     };
   });
 
-  onMount(async () => {
-    const monaco = await monacoImport;
-
-    // Returns an unlisten function
-    return appWindow.listen<TypstCompileEvent>("typst_compile", ({ event, payload }) => {
-      const { document, diagnostics } = payload;
-      const model = editor.getModel();
-      if (model) {
-        const markers: IMarkerData[] =
-          diagnostics?.map(({ range, severity, message, hints }) => {
-            const start = model.getPositionAt(range.start);
-            const end = model.getPositionAt(range.end);
-            return {
-              startLineNumber: start.lineNumber,
-              startColumn: start.column,
-              endLineNumber: end.lineNumber,
-              endColumn: end.column,
-              message: message + "\n" + hints.map((hint) => `hint: ${hint}`).join("\n"),
-              severity:
-                severity === "error" ? monaco.MarkerSeverity.Error : monaco.MarkerSeverity.Warning,
-            };
-          }) ?? [];
-
-        monaco.editor.setModelMarkers(model, "owner", markers);
-      }
-      if (document) {
-        shell.setPreviewState(PreviewState.Idle);
-      } else {
-        shell.setPreviewState(PreviewState.CompileError);
-      }
-    });
-  });
-
-  const fetchContent = async (editor: ICodeEditor, path: string) => {
+  const fetchContent = async (editor: ICodeEditor, editorPath: string) => {
     if (!editor) return;
 
-    // Prevent further updates and immediately flush pending updates
     editor.updateOptions({ readOnly: true });
     handleSaveDebounce.flush();
 
     editor.getModel()?.dispose();
 
     try {
-      const content = await readFileText(path);
+      const content = await readFileText(editorPath);
       const monaco = await monacoImport;
-      const uri = monaco.Uri.file(path);
+      const uri = monaco.Uri.file(editorPath);
 
       let model = monaco.editor.getModel(uri);
       if (model) {
-        // Update existing model. This should only be possible in development mode
-        // after hot reload.
         model.setValue(content);
       } else {
         model = monaco.editor.createModel(content, undefined, uri);
       }
 
       editor.setModel(model);
+      updateOutline();
     } finally {
       editor.updateOptions({ readOnly: false });
     }
@@ -142,13 +220,11 @@
   const handlePaste = async (event: ClipboardEvent) => {
     const text = event.clipboardData?.getData("text");
     if (text === "") {
-      // Could be an image or something else
-      // TODO: Check if this workaround is required on Windows
       event.preventDefault();
       const res = await paste();
 
-      const range = editor.getSelection();
-      const model = editor.getModel();
+      const range = editorInstance.getSelection();
+      const model = editorInstance.getModel();
       if (range && model) {
         model.pushEditOperations(
           [],
@@ -164,7 +240,13 @@
     }
   };
 
-  $: fetchContent(editor, path);
+  $: fetchContent(editorInstance, path);
 </script>
 
-<div bind:this={divEl} on:paste={handlePaste} class={$$props.class} />
+<div bind:this={divEl} on:paste={handlePaste} class={$$props.class} role="textbox" tabindex="0"></div>
+
+<style>
+  div {
+    background: var(--color-bg-primary);
+  }
+</style>

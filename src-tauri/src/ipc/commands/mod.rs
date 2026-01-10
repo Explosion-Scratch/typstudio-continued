@@ -48,9 +48,6 @@ pub fn project<R: Runtime>(
         .ok_or(Error::UnknownProject)
 }
 
-/// Retrieves the project and resolves the path. Furthermore,
-/// this function will resolve the path relative to project's root
-/// and checks whether the path belongs to the project root.
 pub fn project_path<R: Runtime, P: AsRef<Path>>(
     window: &Window<R>,
     project_manager: &State<Arc<ProjectManager<R>>>,
@@ -77,3 +74,17 @@ pub fn project_path<R: Runtime, P: AsRef<Path>>(
     }
     Ok((project, out))
 }
+
+#[tauri::command]
+pub fn open_project<R: Runtime>(
+    window: Window<R>,
+    project_manager: State<'_, Arc<ProjectManager<R>>>,
+    path: String,
+) -> Result<()> {
+    let path = PathBuf::from(&path);
+    let path = std::fs::canonicalize(&path).unwrap_or(path);
+    let project = Arc::new(Project::load_from_path(path));
+    project_manager.set_project(&window, Some(project));
+    Ok(())
+}
+
