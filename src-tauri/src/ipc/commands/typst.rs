@@ -19,6 +19,13 @@ use typst::diag::Severity;
 use typst::World;
 use typst_ide::{Completion, CompletionKind};
 
+#[derive(Serialize, Debug)]
+pub struct TypstJump {
+    filepath: String,
+    start: Option<(usize, usize)>, // line, column
+    end: Option<(usize, usize)>,
+}
+
 #[derive(Serialize_repr, Debug)]
 #[repr(u8)]
 pub enum TypstCompletionKind {
@@ -79,6 +86,9 @@ pub async fn typst_compile<R: Runtime>(
     let source_id = world
         .slot_update(&path, Some(content.clone()))
         .map_err(Into::<Error>::into)?;
+
+    // Set the processed file as main
+    world.set_main_path(typst::syntax::VirtualPath::new(&path));
 
     if !world.is_main_set() {
         let config = project.config.read().unwrap();
@@ -256,4 +266,49 @@ pub async fn typst_autocomplete<R: Runtime>(
         offset: completed_char_offset,
         completions: completions.into_iter().map(TypstCompletion::from).collect(),
     })
+}
+
+#[tauri::command]
+pub async fn typst_jump<R: Runtime>(
+    window: tauri::Window<R>,
+    project_manager: tauri::State<'_, Arc<ProjectManager<R>>>,
+    page: usize,
+    x: f64,
+    y: f64,
+) -> Result<Option<TypstJump>> {
+    let project = project(&window, &project_manager)?;
+    let world = project.world.lock().unwrap();
+    let cache = project.cache.read().unwrap();
+
+    let doc = cache.document.as_ref().ok_or(Error::Unknown)?;
+    let page_doc = doc.pages.get(page).ok_or(Error::Unknown)?;
+
+    let point = typst::layout::Point::new(
+        typst::layout::Abs::pt(x),
+        typst::layout::Abs::pt(y)
+    );
+
+    let jump = typst_ide::jump_from_click(&*world, doc, &page_doc.frame, point);
+
+    let (source_id, offset) = match jump {
+        Some(typst_ide::Jump::File(id, offset)) => (id, offset),
+        _ => return Ok(None),
+    };
+
+    let source = world.source(source_id).map_err(Into::<Error>::into)?;
+    
+    // In Typst 0.14, Source::lines() returns a Lines struct which has conversion methods.
+    let lines = source.lines();
+    let line = lines.byte_to_line(offset).ok_or(Error::Unknown)?;
+    let column = lines.byte_to_column(offset).ok_or(Error::Unknown)?;
+
+    // Get relative path from project root
+    let path = source.id().vpath().as_rootless_path().to_string_lossy().to_string();
+    let filepath = if path.starts_with("/") { path } else { format!("/{}", path) };
+
+    Ok(Some(TypstJump {
+        filepath,
+        start: Some((line + 1, column + 1)),
+        end: Some((line + 1, column + 1)),
+    }))
 }

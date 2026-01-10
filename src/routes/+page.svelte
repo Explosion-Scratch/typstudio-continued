@@ -2,7 +2,8 @@
   import Editor from "../components/Editor.svelte";
   import Preview from "../components/Preview.svelte";
   import { project, shell, recentProjects } from "../lib/stores";
-  import type { ProjectChangeEvent } from "../lib/ipc";
+  import type { ProjectChangeEvent, TypstJump } from "../lib/ipc";
+  import { listDir } from "../lib/ipc";
   import WelcomeScreen from "../components/WelcomeScreen.svelte";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import { onMount } from "svelte";
@@ -12,21 +13,49 @@
   import { fade } from "svelte/transition";
 
   onMount(() => {
-    let cleanup: (() => void) | undefined;
+    let cleanup: (() => void)[] = [];
 
-    appWindow.listen<ProjectChangeEvent>("project_changed", ({ payload }) => {
+    appWindow.listen<ProjectChangeEvent>("project_changed", async ({ payload }) => {
       shell.selectFile(undefined);
       project.set(payload.project);
 
       if (payload.project) {
         recentProjects.addProject(payload.project.root);
 
-        setTimeout(() => {
-          shell.selectFile("/main.typ");
-        }, 100);
+        try {
+          const files = await listDir("/");
+          const mainFile = files.find(f => f.name === "main.typ");
+          if (mainFile) {
+            shell.selectFile("/main.typ");
+          } else {
+            const firstTyp = files.find(f => f.name.endsWith(".typ"));
+            if (firstTyp) {
+              shell.selectFile("/" + firstTyp.name);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to list files:", e);
+        }
       }
     }).then((unlisten) => {
-      cleanup = unlisten;
+      cleanup.push(unlisten);
+    });
+
+    appWindow.listen<TypstJump>("editor_goto_location", ({ payload }) => {
+      if (payload.filepath !== $shell.selectedFile) {
+        shell.selectFile(payload.filepath);
+        setTimeout(() => {
+          if (payload.start) {
+            appWindow.emit("jump_to_line", { line: payload.start[0] });
+          }
+        }, 150);
+      } else {
+        if (payload.start) {
+          appWindow.emit("jump_to_line", { line: payload.start[0] });
+        }
+      }
+    }).then((unlisten) => {
+      cleanup.push(unlisten);
     });
 
     setTimeout(() => {
@@ -34,7 +63,7 @@
     }, 500);
 
     return () => {
-      if (cleanup) cleanup();
+      cleanup.forEach(fn => fn());
     };
   });
 </script>

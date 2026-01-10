@@ -3,7 +3,9 @@
   import CompileErrorDisplay from "./CompileErrorDisplay.svelte";
   import ZoomControls from "./ZoomControls.svelte";
   import { onMount } from "svelte";
+
   import type { TypstCompileEvent, TypstSourceDiagnostic } from "../lib/ipc";
+  import { jump } from "../lib/ipc";
   import { appWindow } from "@tauri-apps/api/window";
   import { shell, PreviewState } from "$lib/stores";
   import { fade } from "svelte/transition";
@@ -58,8 +60,23 @@
     previousEvent = undefined;
   };
 
-  const handlePreviewClick = (event: MouseEvent) => {
-    console.log("Preview clicked at", event.clientX, event.clientY);
+  const handlePreviewClick = async (event: MouseEvent) => {
+    const target = event.target as HTMLElement;
+    const pageElement = target.closest(".preview-page");
+    if (!pageElement) return;
+
+    const pageIndex = parseInt(pageElement.getAttribute("data-page") || "0", 10);
+    const rect = pageElement.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+
+    const ptX = x / zoom;
+    const ptY = y / zoom;
+
+    const result = await jump(pageIndex, ptX, ptY);
+    if (result && result.start) {
+      appWindow.emit("editor_goto_location", result);
+    }
   };
 
   const handleMove = (event: MouseEvent) => {

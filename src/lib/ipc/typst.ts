@@ -62,3 +62,12 @@ export const autocomplete = (
   explicit: boolean
 ): Promise<TypstCompleteResponse> =>
   invoke<TypstCompleteResponse>("typst_autocomplete", { path, content, offset, explicit });
+
+export interface TypstJump {
+  filepath: string;
+  start: [number, number] | null; // line, column (1-indexed)
+  end: [number, number] | null;
+}
+
+export const jump = (page: number, x: number, y: number): Promise<TypstJump | null> =>
+  invoke<TypstJump | null>("typst_jump", { page, x, y });

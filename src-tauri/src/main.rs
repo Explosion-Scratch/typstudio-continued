@@ -39,6 +39,7 @@ async fn main() {
             ipc::commands::typst_compile,
             ipc::commands::typst_render,
             ipc::commands::typst_autocomplete,
+            ipc::commands::typst_jump,
             ipc::commands::clipboard_paste,
             ipc::commands::open_project
         ])

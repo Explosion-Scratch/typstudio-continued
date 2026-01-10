@@ -52,6 +52,7 @@
   class="preview-page"
   style="height: {height}px; min-height: {height}px; width: {width}px; min-width: {width}px;"
   bind:this={container}
+  data-page={page}
 ></div>
 
 <style>
