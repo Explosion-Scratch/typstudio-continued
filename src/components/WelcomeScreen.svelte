@@ -3,38 +3,34 @@
   import { recentProjects, shell } from "$lib/stores";
   import { open } from "@tauri-apps/api/dialog";
   import { invoke } from "@tauri-apps/api";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { fade } from "svelte/transition";
+  import { onMount, onDestroy } from "svelte";
 
   let isLoading = false;
   let loadingMessage = "Opening project...";
   let loadingProgress = 0;
+  let unlistenProgress: UnlistenFn | null = null;
 
-  const simulateFontLoading = () => {
-    loadingProgress = 0;
-    loadingMessage = "Loading fonts...";
-    
-    const steps = [
-      { progress: 15, message: "Loading fonts..." },
-      { progress: 35, message: "Loading fonts..." },
-      { progress: 55, message: "Loading fonts..." },
-      { progress: 75, message: "Loading fonts..." },
-      { progress: 90, message: "Finalizing..." },
-      { progress: 100, message: "Ready" },
-    ];
-    
-    let stepIndex = 0;
-    const interval = setInterval(() => {
-      if (stepIndex < steps.length) {
-        loadingProgress = steps[stepIndex].progress;
-        loadingMessage = steps[stepIndex].message;
-        stepIndex++;
-      } else {
-        clearInterval(interval);
-      }
-    }, 200);
-    
-    return () => clearInterval(interval);
-  };
+  interface LoadingProgressEvent {
+    stage: string;
+    progress: number;
+    message: string | null;
+  }
+
+  onMount(async () => {
+    unlistenProgress = await listen<LoadingProgressEvent>("loading_progress", (event) => {
+      const { stage, progress, message } = event.payload;
+      loadingProgress = progress;
+      loadingMessage = message || stage;
+    });
+  });
+
+  onDestroy(() => {
+    if (unlistenProgress) {
+      unlistenProgress();
+    }
+  });
 
   const handleNewProject = async () => {
     const path = await open({
@@ -47,11 +43,11 @@
       isLoading = true;
       loadingMessage = "Creating project...";
       loadingProgress = 0;
-      const cleanup = simulateFontLoading();
       try {
         await invoke("open_project", { path });
-      } finally {
-        cleanup();
+      } catch (e) {
+        console.error("Failed to create project:", e);
+        isLoading = false;
       }
     }
   };
@@ -67,11 +63,11 @@
       isLoading = true;
       loadingMessage = "Opening project...";
       loadingProgress = 0;
-      const cleanup = simulateFontLoading();
       try {
         await invoke("open_project", { path });
-      } finally {
-        cleanup();
+      } catch (e) {
+        console.error("Failed to open project:", e);
+        isLoading = false;
       }
     }
   };
@@ -80,15 +76,12 @@
     isLoading = true;
     loadingMessage = "Opening project...";
     loadingProgress = 0;
-    const cleanup = simulateFontLoading();
     try {
       await invoke("open_project", { path });
     } catch (e) {
       console.error("Failed to open project:", e);
       recentProjects.removeProject(path);
       isLoading = false;
-    } finally {
-      cleanup();
     }
   };
 
@@ -106,6 +99,20 @@
 </script>
 
 <div class="welcome-screen" in:fade={{ duration: 150 }}>
+  {#if isLoading}
+    <div class="loading-overlay" transition:fade={{ duration: 150 }}>
+      <div class="loading-content">
+        <CircleNotch size={32} class="spinner" weight="bold" />
+        <span class="loading-text">{loadingMessage}</span>
+        {#if loadingProgress > 0}
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: {loadingProgress}%"></div>
+          </div>
+        {/if}
+      </div>
+    </div>
+  {/if}
+
   <div class="welcome-content">
     <div class="welcome-header">
       <h1 class="welcome-title">Typstudio</h1>
@@ -332,5 +339,53 @@
     font-size: 11px;
     color: var(--color-text-tertiary);
     flex-shrink: 0;
+  }
+
+  .loading-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-bg-secondary);
+    z-index: 10;
+  }
+
+  .loading-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-lg);
+  }
+
+  .loading-content :global(.spinner) {
+    color: var(--color-text-tertiary);
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .loading-text {
+    color: var(--color-text-tertiary);
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .progress-bar {
+    width: 200px;
+    height: 4px;
+    background: var(--color-bg-hover);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--color-accent);
+    border-radius: 2px;
+    transition: width 0.3s ease;
   }
 </style>

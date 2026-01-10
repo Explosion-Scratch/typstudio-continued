@@ -81,10 +81,39 @@ pub fn open_project<R: Runtime>(
     project_manager: State<'_, Arc<ProjectManager<R>>>,
     path: String,
 ) -> Result<()> {
+    use crate::ipc::LoadingProgressEvent;
+    
+    let _ = window.emit("loading_progress", LoadingProgressEvent {
+        stage: "Initializing".to_string(),
+        progress: 10,
+        message: Some("Opening project...".to_string()),
+    });
+    
     let path = PathBuf::from(&path);
     let path = std::fs::canonicalize(&path).unwrap_or(path);
+    
+    let _ = window.emit("loading_progress", LoadingProgressEvent {
+        stage: "Loading fonts".to_string(),
+        progress: 30,
+        message: Some("Loading fonts...".to_string()),
+    });
+    
     let project = Arc::new(Project::load_from_path(path));
+    
+    let _ = window.emit("loading_progress", LoadingProgressEvent {
+        stage: "Loading fonts".to_string(),
+        progress: 70,
+        message: Some("Loading fonts...".to_string()),
+    });
+    
     project_manager.set_project(&window, Some(project));
+    
+    let _ = window.emit("loading_progress", LoadingProgressEvent {
+        stage: "Ready".to_string(),
+        progress: 100,
+        message: Some("Ready".to_string()),
+    });
+    
     Ok(())
 }
 

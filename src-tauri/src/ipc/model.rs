@@ -53,3 +53,10 @@ pub struct ProjectModel {
 pub struct FSRefreshEvent {
     pub path: PathBuf,
 }
+
+#[derive(Serialize, Clone, Debug)]
+pub struct LoadingProgressEvent {
+    pub stage: String,
+    pub progress: u32,
+    pub message: Option<String>,
+}

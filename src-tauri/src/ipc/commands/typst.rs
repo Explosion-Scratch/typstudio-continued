@@ -448,3 +448,29 @@ pub async fn typst_install_package(spec: String) -> Result<()> {
     Ok(())
 }
 
+#[tauri::command]
+pub async fn export_pdf<R: Runtime>(
+    window: tauri::Window<R>,
+    project_manager: tauri::State<'_, Arc<ProjectManager<R>>>,
+    path: String,
+) -> Result<()> {
+    let project = project_manager
+        .get_project(&window)
+        .ok_or(Error::UnknownProject)?;
+
+    let cache = project.cache.read().unwrap();
+    let doc = cache.document.as_ref().ok_or(Error::Unknown)?;
+
+    let options = typst_pdf::PdfOptions::default();
+    let pdf = typst_pdf::pdf(doc, &options).map_err(|_| Error::Unknown)?;
+    
+    let mut path_buf = PathBuf::from(&path);
+    if path_buf.extension().is_none() {
+        path_buf.set_extension("pdf");
+    }
+    
+    std::fs::write(&path_buf, pdf).map_err(Into::<Error>::into)?;
+    debug!("Exported PDF to {:?}", path_buf);
+    
+    Ok(())
+}

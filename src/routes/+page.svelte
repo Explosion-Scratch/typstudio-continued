@@ -165,19 +165,6 @@
       cleanup.push(unlisten);
     });
 
-    appWindow.listen("trigger_export_pdf", () => {
-      exportStatus = "Exporting PDF...";
-      appWindow.emit("menu_export_pdf");
-    }).then((unlisten) => {
-      cleanup.push(unlisten);
-    });
-
-    appWindow.listen("export_complete", () => {
-      exportStatus = null;
-    }).then((unlisten) => {
-      cleanup.push(unlisten);
-    });
-
     appWindow.listen<{ path: string }>("export_file_as_pdf", ({ payload }) => {
       exportStatus = "Exporting PDF...";
       setTimeout(() => { exportStatus = null; }, 2000);
@@ -192,12 +179,32 @@
       cleanup.push(unlisten);
     });
 
+    const handlePrintPdf = async () => {
+      try {
+        const { save } = await import("@tauri-apps/api/dialog");
+        const { invoke } = await import("@tauri-apps/api");
+        
+        const savePath = await save({
+          title: "Export PDF",
+          defaultPath: "export.pdf",
+          filters: [{ name: "PDF", extensions: ["pdf"] }],
+        });
+        
+        if (savePath) {
+          exportStatus = "Exporting PDF...";
+          await invoke("export_pdf", { path: savePath });
+          exportStatus = null;
+        }
+      } catch (e) {
+        console.error("Failed to export PDF:", e);
+        exportStatus = null;
+      }
+    };
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === "p") {
         event.preventDefault();
-        exportStatus = "Exporting PDF...";
-        appWindow.emit("trigger_export_pdf");
-        setTimeout(() => { exportStatus = null; }, 2000);
+        handlePrintPdf();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -232,11 +239,11 @@
     <WelcomeScreen />
   {:else}
     <div class="editor-layout" in:fade={{ duration: 150 }}>
-      <SidePanel showContent={showSidebarContent} />
+      <div class="sidebar-wrapper" style={showSidebarContent ? `width: ${sidebarContentWidth + ICON_BAR_WIDTH}px` : ''}>
+        <SidePanel showContent={showSidebarContent} />
+      </div>
       
       {#if showSidebarContent}
-        <div class="sidebar-content" style="width: {sidebarContentWidth}px">
-        </div>
         <Resizer
           direction="horizontal"
           bind:size={sidebarContentWidth}
@@ -370,8 +377,9 @@
     position: relative;
   }
 
-  .sidebar-content {
-    display: none;
+  .sidebar-wrapper {
+    display: flex;
+    flex-shrink: 0;
   }
 
   .content-area {
