@@ -77,6 +77,13 @@ fn build_menu() -> Menu {
         .add_item(
             CustomMenuItem::new("file_open_project", "Open Project...").accelerator("CmdOrCtrl+O"),
         )
+        .add_submenu(Submenu::new(
+            "Open Recent",
+            Menu::new()
+                .add_item(CustomMenuItem::new("file_recent_none", "No Recent Projects").disabled())
+                .add_native_item(MenuItem::Separator)
+                .add_item(CustomMenuItem::new("file_clear_recent", "Clear Recent")),
+        ))
         .add_native_item(MenuItem::Separator)
         .add_item(CustomMenuItem::new("file_save", "Save").accelerator("CmdOrCtrl+S"))
         .add_item(CustomMenuItem::new("file_save_all", "Save All").accelerator("CmdOrCtrl+Shift+S"))

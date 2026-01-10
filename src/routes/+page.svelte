@@ -13,9 +13,22 @@
   import { fade } from "svelte/transition";
   import Resizer from "../components/Resizer.svelte";
   import FileViewer from "../components/FileViewer.svelte";
+  import { Eye, Pencil, CircleNotch } from "$lib/icons";
 
-  let sidebarWidth = 280;
-  let editorWidth = 50;
+  let containerWidth = 0;
+  let containerRef: HTMLDivElement;
+  let sidebarContentWidth = 240;
+  let editorWidth = 0;
+  let contentAreaRef: HTMLDivElement;
+  let contentAreaWidth = 0;
+
+  let exportStatus: string | null = null;
+  let isResizing = false;
+
+  const MIN_SIDEBAR_CONTENT = 150;
+  const COLLAPSE_THRESHOLD = 120;
+  const MIN_PANE_WIDTH = 150;
+  const ICON_BAR_WIDTH = 48;
 
   const TYPST_EXTENSIONS = [".typ"];
   const EDITABLE_EXTENSIONS = [".typ", ".bib", ".md", ".txt"];
@@ -24,8 +37,84 @@
   $: isTypstFile = TYPST_EXTENSIONS.some(ext => $shell.selectedFile?.toLowerCase().endsWith(ext));
   $: isEditableFile = EDITABLE_EXTENSIONS.some(ext => $shell.selectedFile?.toLowerCase().endsWith(ext));
 
+  $: canShowSidebarContent = containerWidth >= 500;
+  $: showSidebarContent = $shell.sidebarVisible && canShowSidebarContent;
+
+  $: projectName = $project?.root?.split("/").pop() || "";
+  $: fileName = $shell.selectedFile?.split("/").pop() || "";
+  $: titleDisplay = projectName && fileName ? `${projectName} — ${fileName}` : fileName || projectName || "";
+
+  $: availableContentWidth = contentAreaWidth;
+  $: canShowBothPanes = availableContentWidth >= MIN_PANE_WIDTH * 2;
+
+  $: if (canShowBothPanes && $shell.viewMode !== "both") {
+    shell.setViewMode("both");
+  } else if (!canShowBothPanes && $shell.viewMode === "both") {
+    shell.setViewMode("editor");
+  }
+
+  $: showEditor = $shell.viewMode === "both" || $shell.viewMode === "editor";
+  $: showPreview = $shell.viewMode === "both" || $shell.viewMode === "preview";
+  $: showViewToggle = !canShowBothPanes && isTypstFile;
+
+  $: if (editorWidth === 0 && contentAreaWidth > 0) {
+    editorWidth = Math.floor(contentAreaWidth / 2);
+  }
+
+  const handleSidebarContentResize = (newSize: number, isDragging: boolean = false) => {
+    isResizing = isDragging;
+    
+    if (newSize < COLLAPSE_THRESHOLD && isDragging) {
+      shell.setSidebarVisible(false);
+      sidebarContentWidth = MIN_SIDEBAR_CONTENT;
+      return;
+    }
+    
+    sidebarContentWidth = Math.max(MIN_SIDEBAR_CONTENT, newSize);
+    if (containerWidth > 0) {
+      shell.setSidebarWidthPercent((sidebarContentWidth / containerWidth) * 100);
+    }
+  };
+
+  const handleSidebarResizeEnd = () => {
+    isResizing = false;
+  };
+
+  const handleEditorResize = (newSize: number) => {
+    editorWidth = Math.max(MIN_PANE_WIDTH, Math.min(newSize, contentAreaWidth - MIN_PANE_WIDTH));
+    if (contentAreaWidth > 0) {
+      shell.setEditorWidthPercent((editorWidth / contentAreaWidth) * 100);
+    }
+  };
+
+  const handleWindowResize = () => {
+    if (containerRef) {
+      containerWidth = containerRef.offsetWidth;
+    }
+    if (contentAreaRef) {
+      const newContentWidth = contentAreaRef.offsetWidth;
+      if (contentAreaWidth > 0 && newContentWidth !== contentAreaWidth) {
+        const ratio = editorWidth / contentAreaWidth;
+        editorWidth = Math.floor(newContentWidth * ratio);
+      }
+      contentAreaWidth = newContentWidth;
+    }
+  };
+
   onMount(() => {
     let cleanup: (() => void)[] = [];
+
+    handleWindowResize();
+    window.addEventListener("resize", handleWindowResize);
+    cleanup.push(() => window.removeEventListener("resize", handleWindowResize));
+
+    const resizeObserver = new ResizeObserver(() => {
+      handleWindowResize();
+    });
+    if (contentAreaRef) {
+      resizeObserver.observe(contentAreaRef);
+    }
+    cleanup.push(() => resizeObserver.disconnect());
 
     appWindow.listen<ProjectChangeEvent>("project_changed", async ({ payload }) => {
       shell.selectFile(undefined);
@@ -70,9 +159,52 @@
       cleanup.push(unlisten);
     });
 
-    setTimeout(() => {
-      shell.setInitializing(false);
-    }, 500);
+    appWindow.listen("toggle_sidebar", () => {
+      shell.toggleSidebar();
+    }).then((unlisten) => {
+      cleanup.push(unlisten);
+    });
+
+    appWindow.listen("trigger_export_pdf", () => {
+      exportStatus = "Exporting PDF...";
+      appWindow.emit("menu_export_pdf");
+    }).then((unlisten) => {
+      cleanup.push(unlisten);
+    });
+
+    appWindow.listen("export_complete", () => {
+      exportStatus = null;
+    }).then((unlisten) => {
+      cleanup.push(unlisten);
+    });
+
+    appWindow.listen<{ path: string }>("export_file_as_pdf", ({ payload }) => {
+      exportStatus = "Exporting PDF...";
+      setTimeout(() => { exportStatus = null; }, 2000);
+    }).then((unlisten) => {
+      cleanup.push(unlisten);
+    });
+
+    appWindow.listen<{ path: string }>("export_file_as_svg", ({ payload }) => {
+      exportStatus = "Exporting SVG...";
+      setTimeout(() => { exportStatus = null; }, 2000);
+    }).then((unlisten) => {
+      cleanup.push(unlisten);
+    });
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "p") {
+        event.preventDefault();
+        exportStatus = "Exporting PDF...";
+        appWindow.emit("trigger_export_pdf");
+        setTimeout(() => { exportStatus = null; }, 2000);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    cleanup.push(() => window.removeEventListener("keydown", handleKeyDown));
+
+    shell.setLoadingStage("Ready", 100);
+    shell.setInitializing(false);
 
     return () => {
       cleanup.forEach(fn => fn());
@@ -80,49 +212,91 @@
   });
 </script>
 
-<div class="app-container" data-tauri-drag-region>
+<div bind:this={containerRef} class="app-container" data-tauri-drag-region>
   <Modals />
 
+  <div class="title-bar" data-tauri-drag-region>
+    <span class="title-text">{titleDisplay}</span>
+  </div>
+
+  {#if exportStatus}
+    <div class="export-overlay" transition:fade={{ duration: 150 }}>
+      <CircleNotch size={24} class="spinner" weight="bold" />
+      <span>{exportStatus}</span>
+    </div>
+  {/if}
+
   {#if $shell.isInitializing}
-    <LoadingScreen />
+    <LoadingScreen stage={$shell.loadingStage} progress={$shell.loadingProgress} />
   {:else if !$project}
     <WelcomeScreen />
   {:else}
     <div class="editor-layout" in:fade={{ duration: 150 }}>
-      {#if $shell.sidebarVisible}
-        <div class="sidebar-container" style="width: {sidebarWidth}px">
-          <SidePanel />
+      <SidePanel showContent={showSidebarContent} />
+      
+      {#if showSidebarContent}
+        <div class="sidebar-content" style="width: {sidebarContentWidth}px">
         </div>
         <Resizer
           direction="horizontal"
-          bind:size={sidebarWidth}
-          minSize={200}
-          maxSize={500}
+          bind:size={sidebarContentWidth}
+          minSize={0}
+          maxSize={Math.min(400, containerWidth * 0.3)}
+          on:resize={(e) => handleSidebarContentResize(e.detail, true)}
+          on:resizeend={handleSidebarResizeEnd}
         />
       {/if}
 
-      {#if $shell.selectedFile}
-        {#if isEditableFile}
-          <div class="editor-container" style="flex: {editorWidth}">
-            <Editor class="editor-pane" path={$shell.selectedFile} />
-          </div>
-          {#if isTypstFile}
-            <Resizer
-              direction="horizontal"
-              bind:size={editorWidth}
-              minSize={20}
-              maxSize={80}
-            />
-            <Preview />
+      <div bind:this={contentAreaRef} class="content-area">
+        {#if $shell.selectedFile}
+          {#if isEditableFile}
+            {#if showEditor}
+              <div 
+                class="editor-container" 
+                style={$shell.viewMode === 'both' ? `width: ${editorWidth}px` : 'flex: 1'}
+              >
+                <Editor class="editor-pane" path={$shell.selectedFile} />
+              </div>
+            {/if}
+            {#if isTypstFile}
+              {#if $shell.viewMode === "both"}
+                <Resizer
+                  direction="horizontal"
+                  bind:size={editorWidth}
+                  minSize={MIN_PANE_WIDTH}
+                  maxSize={contentAreaWidth - MIN_PANE_WIDTH}
+                  on:resize={(e) => handleEditorResize(e.detail)}
+                />
+              {/if}
+              {#if showPreview}
+                <div class="preview-container" style="flex: 1">
+                  <Preview />
+                </div>
+              {/if}
+            {/if}
+          {:else}
+            <FileViewer path={$shell.selectedFile} />
           {/if}
         {:else}
-          <FileViewer path={$shell.selectedFile} />
+          <div class="empty-state">
+            <span class="empty-text">Select a file to start editing</span>
+          </div>
         {/if}
-      {:else}
-        <div class="empty-state">
-          <span class="empty-text">Select a file to start editing</span>
-        </div>
-      {/if}
+
+        {#if showViewToggle}
+          <button
+            class="view-toggle"
+            on:click={() => shell.toggleViewMode()}
+            title={$shell.viewMode === "editor" ? "Show Preview" : "Show Editor"}
+          >
+            <svelte:component
+              this={$shell.viewMode === "editor" ? Eye : Pencil}
+              size={16}
+              weight="duotone"
+            />
+          </button>
+        {/if}
+      </div>
     </div>
   {/if}
 </div>
@@ -135,6 +309,57 @@
     width: 100vw;
     background: var(--color-bg-primary);
     overflow: hidden;
+    position: relative;
+  }
+
+  .title-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    pointer-events: none;
+  }
+
+  .title-text {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 400px;
+    text-align: center;
+  }
+
+  .export-overlay {
+    position: fixed;
+    top: 36px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-sm) var(--space-lg);
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    z-index: 1000;
+    box-shadow: var(--shadow-lg);
+    font-size: 13px;
+    color: var(--color-text-secondary);
+  }
+
+  .export-overlay :global(.spinner) {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 
   .editor-layout {
@@ -142,18 +367,29 @@
     flex: 1;
     min-height: 0;
     padding-top: 28px;
+    position: relative;
   }
 
-  .sidebar-container {
+  .sidebar-content {
+    display: none;
+  }
+
+  .content-area {
     display: flex;
-    flex-shrink: 0;
-    height: 100%;
-    overflow: hidden;
+    flex: 1;
+    min-width: 0;
+    position: relative;
   }
 
   .editor-container {
     display: flex;
-    min-width: 200px;
+    min-width: 150px;
+    overflow: hidden;
+  }
+
+  .preview-container {
+    display: flex;
+    min-width: 150px;
     overflow: hidden;
   }
 
@@ -175,5 +411,28 @@
     color: var(--color-text-tertiary);
     font-size: 14px;
   }
-</style>
 
+  .view-toggle {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    z-index: 100;
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-fast);
+  }
+
+  .view-toggle:hover {
+    background: var(--color-bg-hover);
+    color: var(--color-text-primary);
+  }
+</style>

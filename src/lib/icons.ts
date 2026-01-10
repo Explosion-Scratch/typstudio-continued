@@ -35,7 +35,11 @@ import {
   Trash,
   GlobeSimple as Globe,
   Pencil,
-  FileArrowDown as FolderArrowDown
+  FileArrowDown as FolderArrowDown,
+  Eye,
+  Columns,
+  FilePdf,
+  FileSvg
 } from "phosphor-svelte";
 
 export {
@@ -75,7 +79,11 @@ export {
   Trash,
   Globe,
   Pencil,
-  FolderArrowDown
+  FolderArrowDown,
+  Eye,
+  Columns,
+  FilePdf,
+  FileSvg
 };
 
 export const ICON_SIZE_SM = 16;

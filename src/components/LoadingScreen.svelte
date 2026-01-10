@@ -1,12 +1,20 @@
 <script lang="ts">
   import { CircleNotch } from "$lib/icons";
   import { fade } from "svelte/transition";
+
+  export let stage: string = "Starting Typstudio...";
+  export let progress: number = 0;
 </script>
 
 <div class="loading-screen" transition:fade={{ duration: 200 }}>
   <div class="loading-content">
     <CircleNotch size={32} class="spinner" weight="bold" />
-    <span class="loading-text">Starting Typstudio...</span>
+    <span class="loading-text">{stage}</span>
+    {#if progress > 0}
+      <div class="progress-bar">
+        <div class="progress-fill" style="width: {progress}%"></div>
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -46,5 +54,20 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  .progress-bar {
+    width: 200px;
+    height: 4px;
+    background: var(--color-bg-hover);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--color-accent);
+    border-radius: 2px;
+    transition: width 0.3s ease;
   }
 </style>

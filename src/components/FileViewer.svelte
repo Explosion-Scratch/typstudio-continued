@@ -1,5 +1,6 @@
 <script lang="ts">
   import { readFileBinary, readFileText } from "$lib/ipc";
+  import ZoomControls from "./ZoomControls.svelte";
 
   export let path: string;
 
@@ -7,6 +8,16 @@
   let binaryUrl: string | null = null;
   let isLoading = true;
   let error: string | null = null;
+
+  let zoom = 1.0;
+  let panX = 0;
+  let panY = 0;
+  let isDragging = false;
+  let dragStart = { x: 0, y: 0 };
+  let imageContainer: HTMLDivElement;
+
+  const minZoom = 0.25;
+  const maxZoom = 4.0;
 
   const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "svg", "ico"];
   const VIDEO_EXTENSIONS = ["mp4", "webm", "mov"];
@@ -32,6 +43,9 @@
     isLoading = true;
     error = null;
     content = null;
+    zoom = 1.0;
+    panX = 0;
+    panY = 0;
     if (binaryUrl) {
       URL.revokeObjectURL(binaryUrl);
       binaryUrl = null;
@@ -73,6 +87,46 @@
     }
   }
 
+  const handleZoomIn = () => {
+    zoom = Math.min(maxZoom, zoom * 1.2);
+  };
+
+  const handleZoomOut = () => {
+    zoom = Math.max(minZoom, zoom / 1.2);
+  };
+
+  const handleZoomReset = () => {
+    zoom = 1.0;
+    panX = 0;
+    panY = 0;
+  };
+
+  const handleWheel = (event: WheelEvent) => {
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      const delta = event.deltaY > 0 ? 0.9 : 1.1;
+      zoom = Math.max(minZoom, Math.min(maxZoom, zoom * delta));
+    }
+  };
+
+  const handleMouseDown = (event: MouseEvent) => {
+    if (zoom > 1) {
+      isDragging = true;
+      dragStart = { x: event.clientX - panX, y: event.clientY - panY };
+    }
+  };
+
+  const handleMouseMove = (event: MouseEvent) => {
+    if (isDragging) {
+      panX = event.clientX - dragStart.x;
+      panY = event.clientY - dragStart.y;
+    }
+  };
+
+  const handleMouseUp = () => {
+    isDragging = false;
+  };
+
   $: loadFile(path);
 </script>
 
@@ -88,8 +142,31 @@
       <span>{error}</span>
     </div>
   {:else if fileType === "image" && binaryUrl}
-    <div class="image-container">
-      <img src={binaryUrl} alt={path.split("/").pop()} />
+    <div 
+      bind:this={imageContainer}
+      class="image-container"
+      class:dragging={isDragging}
+      class:zoomable={zoom > 1}
+      on:wheel={handleWheel}
+      on:mousedown={handleMouseDown}
+      on:mousemove={handleMouseMove}
+      on:mouseup={handleMouseUp}
+      on:mouseleave={handleMouseUp}
+      role="img"
+      tabindex="0"
+    >
+      <img 
+        src={binaryUrl} 
+        alt={path.split("/").pop()} 
+        style="transform: scale({zoom}) translate({panX / zoom}px, {panY / zoom}px)"
+        draggable="false"
+      />
+      <ZoomControls
+        {zoom}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onZoomReset={handleZoomReset}
+      />
     </div>
   {:else if fileType === "video" && binaryUrl}
     <div class="media-container">
@@ -124,7 +201,8 @@
     display: flex;
     flex-direction: column;
     background: var(--color-bg-secondary);
-    overflow: auto;
+    overflow: hidden;
+    position: relative;
   }
 
   .loading-state,
@@ -193,7 +271,16 @@
     align-items: center;
     justify-content: center;
     padding: var(--space-xl);
-    overflow: auto;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .image-container.zoomable {
+    cursor: grab;
+  }
+
+  .image-container.dragging {
+    cursor: grabbing;
   }
 
   .image-container img {
@@ -202,6 +289,8 @@
     object-fit: contain;
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-md);
+    transition: transform 0.1s ease;
+    user-select: none;
   }
 
   .media-container {

@@ -1,9 +1,40 @@
 <script lang="ts">
-  import { FolderPlus, Clock, FolderDuotone, ArrowRight } from "$lib/icons";
+  import { FolderPlus, Clock, FolderDuotone, ArrowRight, CircleNotch } from "$lib/icons";
   import { recentProjects, shell } from "$lib/stores";
   import { open } from "@tauri-apps/api/dialog";
   import { invoke } from "@tauri-apps/api";
   import { fade } from "svelte/transition";
+
+  let isLoading = false;
+  let loadingMessage = "Opening project...";
+  let loadingProgress = 0;
+
+  const simulateFontLoading = () => {
+    loadingProgress = 0;
+    loadingMessage = "Loading fonts...";
+    
+    const steps = [
+      { progress: 15, message: "Loading fonts..." },
+      { progress: 35, message: "Loading fonts..." },
+      { progress: 55, message: "Loading fonts..." },
+      { progress: 75, message: "Loading fonts..." },
+      { progress: 90, message: "Finalizing..." },
+      { progress: 100, message: "Ready" },
+    ];
+    
+    let stepIndex = 0;
+    const interval = setInterval(() => {
+      if (stepIndex < steps.length) {
+        loadingProgress = steps[stepIndex].progress;
+        loadingMessage = steps[stepIndex].message;
+        stepIndex++;
+      } else {
+        clearInterval(interval);
+      }
+    }, 200);
+    
+    return () => clearInterval(interval);
+  };
 
   const handleNewProject = async () => {
     const path = await open({
@@ -13,7 +44,15 @@
     });
 
     if (path && typeof path === "string") {
-      await invoke("open_project", { path });
+      isLoading = true;
+      loadingMessage = "Creating project...";
+      loadingProgress = 0;
+      const cleanup = simulateFontLoading();
+      try {
+        await invoke("open_project", { path });
+      } finally {
+        cleanup();
+      }
     }
   };
 
@@ -25,16 +64,31 @@
     });
 
     if (path && typeof path === "string") {
-      await invoke("open_project", { path });
+      isLoading = true;
+      loadingMessage = "Opening project...";
+      loadingProgress = 0;
+      const cleanup = simulateFontLoading();
+      try {
+        await invoke("open_project", { path });
+      } finally {
+        cleanup();
+      }
     }
   };
 
   const handleOpenRecent = async (path: string) => {
+    isLoading = true;
+    loadingMessage = "Opening project...";
+    loadingProgress = 0;
+    const cleanup = simulateFontLoading();
     try {
       await invoke("open_project", { path });
     } catch (e) {
       console.error("Failed to open project:", e);
       recentProjects.removeProject(path);
+      isLoading = false;
+    } finally {
+      cleanup();
     }
   };
 

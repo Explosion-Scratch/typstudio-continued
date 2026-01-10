@@ -6,7 +6,9 @@
   export let outline: OutlineItem[] = [];
 
   let searchQuery = "";
-  let collapsedLevels: Set<number> = new Set();
+  let collapsedItems: Set<string> = new Set();
+
+  const getItemId = (item: OutlineItem) => `${item.line}-${item.level}-${item.title}`;
 
   const getIcon = (type: OutlineItem["type"]) => {
     switch (type) {
@@ -27,33 +29,84 @@
     appWindow.emit("jump_to_position", { line, column: 1 });
   };
 
-  const toggleLevel = (level: number) => {
-    if (collapsedLevels.has(level)) {
-      collapsedLevels.delete(level);
+  const toggleItem = (item: OutlineItem) => {
+    const id = getItemId(item);
+    if (collapsedItems.has(id)) {
+      collapsedItems.delete(id);
     } else {
-      collapsedLevels.add(level);
+      collapsedItems.add(id);
     }
-    collapsedLevels = collapsedLevels;
+    collapsedItems = collapsedItems;
   };
 
-  $: filteredOutline = searchQuery.trim()
+  const isItemCollapsed = (item: OutlineItem) => collapsedItems.has(getItemId(item));
+
+  const getParentHeadings = (index: number, items: OutlineItem[]): OutlineItem[] => {
+    const item = items[index];
+    const parents: OutlineItem[] = [];
+    for (let i = index - 1; i >= 0; i--) {
+      if (items[i].level < item.level) {
+        parents.unshift(items[i]);
+        if (items[i].level === 1) break;
+      }
+    }
+    return parents;
+  };
+
+  $: matchedItems = searchQuery.trim()
     ? outline.filter(item =>
         item.title.toLowerCase().includes(searchQuery.toLowerCase())
       )
-    : outline;
+    : [];
 
-  $: visibleOutline = filteredOutline.filter((item, index, arr) => {
-    for (let i = index - 1; i >= 0; i--) {
-      if (arr[i].level < item.level && collapsedLevels.has(arr[i].level)) {
-        return false;
+  $: displayItems = (() => {
+    if (!searchQuery.trim()) {
+      const visible: { item: OutlineItem; isParent: boolean }[] = [];
+      for (let i = 0; i < outline.length; i++) {
+        const item = outline[i];
+        let hidden = false;
+        for (let j = i - 1; j >= 0; j--) {
+          if (outline[j].level < item.level && isItemCollapsed(outline[j])) {
+            hidden = true;
+            break;
+          }
+          if (outline[j].level < item.level) break;
+        }
+        if (!hidden) {
+          visible.push({ item, isParent: false });
+        }
+      }
+      return visible;
+    }
+
+    const result: { item: OutlineItem; isParent: boolean }[] = [];
+    const addedIds = new Set<string>();
+
+    for (const matched of matchedItems) {
+      const idx = outline.indexOf(matched);
+      const parents = getParentHeadings(idx, outline);
+      
+      for (const parent of parents) {
+        const id = getItemId(parent);
+        if (!addedIds.has(id)) {
+          addedIds.add(id);
+          result.push({ item: parent, isParent: true });
+        }
+      }
+      
+      const matchedId = getItemId(matched);
+      if (!addedIds.has(matchedId)) {
+        addedIds.add(matchedId);
+        result.push({ item: matched, isParent: false });
       }
     }
-    return true;
-  });
+    
+    return result.sort((a, b) => a.item.line - b.item.line);
+  })();
 
-  const hasChildren = (index: number, items: OutlineItem[]) => {
-    const item = items[index];
-    for (let i = index + 1; i < items.length; i++) {
+  const hasChildren = (item: OutlineItem, items: OutlineItem[]) => {
+    const idx = items.indexOf(item);
+    for (let i = idx + 1; i < items.length; i++) {
       if (items[i].level <= item.level) break;
       if (items[i].level > item.level) return true;
     }
@@ -81,28 +134,32 @@
       <span class="empty-text">No outline available</span>
       <span class="empty-hint">Add headings with = Title</span>
     </div>
-  {:else if filteredOutline.length === 0}
+  {:else if displayItems.length === 0}
     <div class="empty-state">
       <span class="empty-text">No matches found</span>
     </div>
   {:else}
     <div class="outline-list">
-      {#each visibleOutline as item, i}
+      {#each displayItems as { item, isParent }}
         <button
           class="outline-item"
+          class:parent-item={isParent}
           style="padding-left: {12 + (item.level - 1) * 12}px"
           on:click={() => handleItemClick(item.line)}
         >
-          {#if item.type === "heading" && hasChildren(filteredOutline.indexOf(item), filteredOutline)}
-            <button
+          {#if item.type === "heading" && hasChildren(item, outline) && !searchQuery.trim()}
+            <span
               class="collapse-toggle"
-              on:click|stopPropagation={() => toggleLevel(item.level)}
+              role="button"
+              tabindex="0"
+              on:click|stopPropagation={() => toggleItem(item)}
+              on:keydown|stopPropagation={(e) => e.key === 'Enter' && toggleItem(item)}
             >
               <svelte:component
-                this={collapsedLevels.has(item.level) ? CaretRight : CaretDown}
+                this={isItemCollapsed(item) ? CaretRight : CaretDown}
                 size={12}
               />
-            </button>
+            </span>
           {:else}
             <span class="collapse-placeholder"></span>
           {/if}
@@ -197,6 +254,14 @@
     background: var(--color-bg-hover);
   }
 
+  .outline-item.parent-item {
+    opacity: 0.6;
+  }
+
+  .outline-item.parent-item .item-title {
+    color: var(--color-text-tertiary);
+  }
+
   .collapse-toggle {
     display: flex;
     align-items: center;
@@ -237,4 +302,3 @@
     flex-shrink: 0;
   }
 </style>
-

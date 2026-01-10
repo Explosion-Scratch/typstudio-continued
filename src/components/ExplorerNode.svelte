@@ -11,6 +11,8 @@
     FolderOpenDuotone,
     Trash,
     Pencil,
+    FilePdf,
+    FileSvg,
   } from "$lib/icons";
   import { appWindow } from "@tauri-apps/api/window";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
@@ -21,6 +23,8 @@
   let expanded = path === "/";
   let files: FileItem[] = [];
   let contextMenu: { x: number; y: number } | null = null;
+
+  $: isTypstFile = path.toLowerCase().endsWith(".typ");
 
   const handleClick = () => {
     if (type === "directory") {
@@ -42,48 +46,92 @@
   };
 
   const handleDelete = async () => {
-    if (!confirm(`Delete "${fileName}"?`)) return;
-    try {
-      await deleteFile(path);
-      const parentPath = path.substring(0, path.lastIndexOf("/")) || "/";
-      appWindow.emit("fs_refresh", { path: parentPath.substring(1) });
-      if ($shell.selectedFile === path) {
-        shell.selectFile(undefined);
-      }
-    } catch (e) {
-      console.error("Failed to delete file:", e);
-    }
+    shell.createModal({
+      type: "confirm",
+      title: "Delete File",
+      message: `Are you sure you want to delete "${fileName}"?`,
+      confirmLabel: "Delete",
+      onConfirm: async () => {
+        try {
+          await deleteFile(path);
+          const parentPath = path.substring(0, path.lastIndexOf("/")) || "/";
+          appWindow.emit("fs_refresh", { path: parentPath.substring(1) });
+          if ($shell.selectedFile === path) {
+            shell.selectFile(undefined);
+          }
+        } catch (e) {
+          console.error("Failed to delete file:", e);
+        }
+      },
+    });
   };
 
-  const handleRename = async () => {
-    const newName = prompt("Enter new name:", fileName);
-    if (!newName || newName === fileName) return;
-    try {
-      const parentPath = path.substring(0, path.lastIndexOf("/")) || "/";
-      const newPath = parentPath === "/" ? `/${newName}` : `${parentPath}/${newName}`;
-      await renameFile(path, newPath);
-      appWindow.emit("fs_refresh", { path: parentPath.substring(1) });
-      if ($shell.selectedFile === path) {
-        shell.selectFile(newPath);
-      }
-    } catch (e) {
-      console.error("Failed to rename file:", e);
-    }
+  const handleRename = () => {
+    shell.createModal({
+      type: "input",
+      title: "Rename",
+      placeholder: fileName,
+      callback: async (newName) => {
+        if (!newName || newName === fileName) return;
+        try {
+          const parentPath = path.substring(0, path.lastIndexOf("/")) || "/";
+          const newPath = parentPath === "/" ? `/${newName}` : `${parentPath}/${newName}`;
+          await renameFile(path, newPath);
+          appWindow.emit("fs_refresh", { path: parentPath.substring(1) });
+          if ($shell.selectedFile === path) {
+            shell.selectFile(newPath);
+          }
+        } catch (e) {
+          console.error("Failed to rename file:", e);
+        }
+      },
+    });
   };
 
-  const getContextMenuItems = (): ContextMenuItem[] => [
-    {
-      label: "Rename",
-      icon: Pencil,
-      action: handleRename,
-    },
-    { label: "", action: () => {}, divider: true },
-    {
-      label: "Delete",
-      icon: Trash,
-      action: handleDelete,
-    },
-  ];
+  const handleExportPdf = () => {
+    appWindow.emit("export_file_as_pdf", { path });
+  };
+
+  const handleExportSvg = () => {
+    appWindow.emit("export_file_as_svg", { path });
+  };
+
+  const getContextMenuItems = (): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [
+      {
+        label: "Rename",
+        icon: Pencil,
+        action: handleRename,
+      },
+    ];
+
+    if (isTypstFile) {
+      items.push(
+        { label: "", action: () => {}, divider: true },
+        {
+          label: "Export to PDF",
+          icon: FilePdf,
+          action: handleExportPdf,
+        },
+        {
+          label: "Export to SVG",
+          icon: FileSvg,
+          action: handleExportSvg,
+        }
+      );
+    }
+
+    items.push(
+      { label: "", action: () => {}, divider: true },
+      {
+        label: "Delete",
+        icon: Trash,
+        action: handleDelete,
+      }
+    );
+
+    return items;
+  };
 
   onMount(() => {
     appWindow.listen<FSRefreshEvent>("fs_refresh", ({ payload }) => {

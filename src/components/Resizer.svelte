@@ -5,7 +5,7 @@
   export let minSize = 150;
   export let maxSize = 600;
 
-  const dispatch = createEventDispatcher<{ resize: number }>();
+  const dispatch = createEventDispatcher<{ resize: number; resizeend: void }>();
 
   let isDragging = false;
   let startPosition = 0;
@@ -38,6 +38,7 @@
     document.removeEventListener("mouseup", handleMouseUp);
     document.body.style.cursor = "";
     document.body.style.userSelect = "";
+    dispatch("resizeend");
   };
 </script>
 
@@ -56,6 +57,7 @@
     background: transparent;
     transition: background var(--transition-fast);
     position: relative;
+    z-index: 1000;
   }
 
   .resizer::after {
@@ -67,31 +69,31 @@
   }
 
   .resizer.horizontal {
-    width: 5px;
+    width: 16px;
     cursor: col-resize;
-    margin: 0 -2px;
-    z-index: 10;
+    margin: 0 -8px;
   }
 
   .resizer.horizontal::after {
     top: 0;
     bottom: 0;
-    left: 2px;
-    width: 1px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
   }
 
   .resizer.vertical {
-    height: 5px;
+    height: 16px;
     cursor: row-resize;
-    margin: -2px 0;
-    z-index: 10;
+    margin: -8px 0;
   }
 
   .resizer.vertical::after {
     left: 0;
     right: 0;
-    top: 2px;
-    height: 1px;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 2px;
   }
 
   .resizer:hover::after,

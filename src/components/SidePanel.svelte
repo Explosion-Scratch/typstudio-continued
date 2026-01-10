@@ -3,13 +3,26 @@
   import DocumentOutline from "./DocumentOutline.svelte";
   import PackagesPanel from "./PackagesPanel.svelte";
   import { FolderDuotone, ListBullets, Package } from "$lib/icons";
-  import { shell } from "$lib/stores";
+  import { shell, type SidebarTab } from "$lib/stores";
+
+  export let showContent: boolean = true;
 
   const tabs = [
     { id: "files" as const, icon: FolderDuotone, label: "Files" },
     { id: "outline" as const, icon: ListBullets, label: "Outline" },
     { id: "packages" as const, icon: Package, label: "Packages" },
   ];
+
+  const handleTabClick = (tabId: SidebarTab) => {
+    if ($shell.activeSidebarTab === tabId && showContent) {
+      shell.toggleSidebar();
+    } else {
+      shell.setSidebarTab(tabId);
+      if (!$shell.sidebarVisible) {
+        shell.setSidebarVisible(true);
+      }
+    }
+  };
 </script>
 
 <div class="side-panel">
@@ -17,8 +30,8 @@
     {#each tabs as tab}
       <button
         class="tab-button"
-        class:active={$shell.activeSidebarTab === tab.id}
-        on:click={() => shell.setSidebarTab(tab.id)}
+        class:active={$shell.activeSidebarTab === tab.id && showContent}
+        on:click={() => handleTabClick(tab.id)}
         title={tab.label}
       >
         <svelte:component
@@ -30,15 +43,17 @@
     {/each}
   </div>
 
-  <div class="panel-content">
-    {#if $shell.activeSidebarTab === "files"}
-      <ExplorerTree />
-    {:else if $shell.activeSidebarTab === "outline"}
-      <DocumentOutline outline={$shell.documentOutline} />
-    {:else if $shell.activeSidebarTab === "packages"}
-      <PackagesPanel />
-    {/if}
-  </div>
+  {#if showContent}
+    <div class="panel-content">
+      {#if $shell.activeSidebarTab === "files"}
+        <ExplorerTree />
+      {:else if $shell.activeSidebarTab === "outline"}
+        <DocumentOutline outline={$shell.documentOutline} />
+      {:else if $shell.activeSidebarTab === "packages"}
+        <PackagesPanel />
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -82,8 +97,8 @@
   .panel-content {
     display: flex;
     flex-direction: column;
-    width: 240px;
-    min-width: 200px;
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
   }
 </style>

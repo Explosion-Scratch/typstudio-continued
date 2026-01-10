@@ -26,6 +26,11 @@ export interface Shell {
   documentOutline: OutlineItem[];
   sidebarVisible: boolean;
   currentCompileRequestId: number;
+  sidebarWidthPercent: number;
+  editorWidthPercent: number;
+  viewMode: "both" | "editor" | "preview";
+  loadingStage: string;
+  loadingProgress: number;
 }
 
 export interface BaseModal {
@@ -66,6 +71,11 @@ const createShell = () => {
     documentOutline: [],
     sidebarVisible: true,
     currentCompileRequestId: 0,
+    sidebarWidthPercent: 20,
+    editorWidthPercent: 50,
+    viewMode: "both",
+    loadingStage: "Initializing...",
+    loadingProgress: 0,
   });
 
   let currentRequestId = 0;
@@ -122,6 +132,28 @@ const createShell = () => {
     },
     getCurrentCompileRequestId(): number {
       return currentRequestId;
+    },
+    setSidebarWidthPercent(percent: number) {
+      update((shell) => ({ ...shell, sidebarWidthPercent: Math.max(10, Math.min(40, percent)) }));
+    },
+    setEditorWidthPercent(percent: number) {
+      update((shell) => ({ ...shell, editorWidthPercent: Math.max(20, Math.min(80, percent)) }));
+    },
+    setViewMode(mode: "both" | "editor" | "preview") {
+      update((shell) => ({ ...shell, viewMode: mode }));
+    },
+    toggleViewMode() {
+      update((shell) => ({
+        ...shell,
+        viewMode: shell.viewMode === "editor" ? "preview" : "editor",
+      }));
+    },
+    setLoadingStage(stage: string, progress?: number) {
+      update((shell) => ({
+        ...shell,
+        loadingStage: stage,
+        loadingProgress: progress ?? shell.loadingProgress,
+      }));
     },
   };
 };
