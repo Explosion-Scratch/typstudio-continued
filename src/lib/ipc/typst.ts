@@ -71,3 +71,19 @@ export interface TypstJump {
 
 export const jump = (page: number, x: number, y: number): Promise<TypstJump | null> =>
   invoke<TypstJump | null>("typst_jump", { page, x, y });
+
+export interface InstalledPackage {
+  namespace: string;
+  name: string;
+  version: string;
+}
+
+export const listPackages = (): Promise<InstalledPackage[]> =>
+  invoke<InstalledPackage[]>("typst_list_packages");
+
+export const deletePackage = (namespace: string, name: string, version: string): Promise<void> =>
+  invoke("typst_delete_package", { namespace, name, version });
+
+export const installPackage = (spec: string): Promise<void> =>
+  invoke("typst_install_package", { spec });
+

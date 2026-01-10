@@ -32,7 +32,10 @@ import {
   Link,
   ArrowRight,
   Check,
-  Trash
+  Trash,
+  GlobeSimple as Globe,
+  Pencil,
+  FileArrowDown as FolderArrowDown
 } from "phosphor-svelte";
 
 export {
@@ -69,9 +72,13 @@ export {
   Link,
   ArrowRight,
   Check,
-  Trash
+  Trash,
+  Globe,
+  Pencil,
+  FolderArrowDown
 };
 
 export const ICON_SIZE_SM = 16;
 export const ICON_SIZE_MD = 20;
 export const ICON_SIZE_LG = 24;
+

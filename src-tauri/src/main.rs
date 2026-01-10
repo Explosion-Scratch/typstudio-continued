@@ -36,10 +36,15 @@ async fn main() {
             ipc::commands::fs_create_file,
             ipc::commands::fs_write_file_binary,
             ipc::commands::fs_write_file_text,
+            ipc::commands::fs_delete_file,
+            ipc::commands::fs_rename_file,
             ipc::commands::typst_compile,
             ipc::commands::typst_render,
             ipc::commands::typst_autocomplete,
             ipc::commands::typst_jump,
+            ipc::commands::typst_list_packages,
+            ipc::commands::typst_delete_package,
+            ipc::commands::typst_install_package,
             ipc::commands::clipboard_paste,
             ipc::commands::open_project
         ])

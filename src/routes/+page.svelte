@@ -11,6 +11,18 @@
   import SidePanel from "../components/SidePanel.svelte";
   import Modals from "../components/ShellModal.svelte";
   import { fade } from "svelte/transition";
+  import Resizer from "../components/Resizer.svelte";
+  import FileViewer from "../components/FileViewer.svelte";
+
+  let sidebarWidth = 280;
+  let editorWidth = 50;
+
+  const TYPST_EXTENSIONS = [".typ"];
+  const EDITABLE_EXTENSIONS = [".typ", ".bib", ".md", ".txt"];
+
+  $: selectedExtension = $shell.selectedFile?.toLowerCase().split(".").pop() || "";
+  $: isTypstFile = TYPST_EXTENSIONS.some(ext => $shell.selectedFile?.toLowerCase().endsWith(ext));
+  $: isEditableFile = EDITABLE_EXTENSIONS.some(ext => $shell.selectedFile?.toLowerCase().endsWith(ext));
 
   onMount(() => {
     let cleanup: (() => void)[] = [];
@@ -46,12 +58,12 @@
         shell.selectFile(payload.filepath);
         setTimeout(() => {
           if (payload.start) {
-            appWindow.emit("jump_to_line", { line: payload.start[0] });
+            appWindow.emit("jump_to_position", { line: payload.start[0], column: payload.start[1] });
           }
         }, 150);
       } else {
         if (payload.start) {
-          appWindow.emit("jump_to_line", { line: payload.start[0] });
+          appWindow.emit("jump_to_position", { line: payload.start[0], column: payload.start[1] });
         }
       }
     }).then((unlisten) => {
@@ -78,12 +90,34 @@
   {:else}
     <div class="editor-layout" in:fade={{ duration: 150 }}>
       {#if $shell.sidebarVisible}
-        <SidePanel />
+        <div class="sidebar-container" style="width: {sidebarWidth}px">
+          <SidePanel />
+        </div>
+        <Resizer
+          direction="horizontal"
+          bind:size={sidebarWidth}
+          minSize={200}
+          maxSize={500}
+        />
       {/if}
 
       {#if $shell.selectedFile}
-        <Editor class="editor-pane" path={$shell.selectedFile} />
-        <Preview />
+        {#if isEditableFile}
+          <div class="editor-container" style="flex: {editorWidth}">
+            <Editor class="editor-pane" path={$shell.selectedFile} />
+          </div>
+          {#if isTypstFile}
+            <Resizer
+              direction="horizontal"
+              bind:size={editorWidth}
+              minSize={20}
+              maxSize={80}
+            />
+            <Preview />
+          {/if}
+        {:else}
+          <FileViewer path={$shell.selectedFile} />
+        {/if}
       {:else}
         <div class="empty-state">
           <span class="empty-text">Select a file to start editing</span>
@@ -107,6 +141,20 @@
     display: flex;
     flex: 1;
     min-height: 0;
+    padding-top: 28px;
+  }
+
+  .sidebar-container {
+    display: flex;
+    flex-shrink: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .editor-container {
+    display: flex;
+    min-width: 200px;
+    overflow: hidden;
   }
 
   :global(.editor-pane) {
@@ -128,3 +176,4 @@
     font-size: 14px;
   }
 </style>
+

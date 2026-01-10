@@ -62,8 +62,6 @@
     }
   };
 
-  const handleCompileDebounced = debounce(handleCompile, 50);
-
   const handleSave = () => {
     const model = editorInstance.getModel();
     if (model) {
@@ -73,10 +71,10 @@
 
   const handleSaveDebounce = debounce(handleSave, 1000, { maxWait: 5000 });
 
-  export const scrollToLine = (line: number) => {
+  export const scrollToPosition = (line: number, column: number = 1) => {
     if (editorInstance) {
       editorInstance.revealLineInCenter(line);
-      editorInstance.setPosition({ lineNumber: line, column: 1 });
+      editorInstance.setPosition({ lineNumber: line, column });
       editorInstance.focus();
     }
   };
@@ -131,14 +129,14 @@
       });
 
       editorInstance.onDidChangeModel((e: IModelChangedEvent) => {
-        handleCompileDebounced();
+        handleCompile();
         updateOutline();
       });
 
       editorInstance.onDidChangeModelContent((e: IModelContentChangedEvent) => {
         clearMarkersWhileTyping();
         markTypingDone();
-        handleCompileDebounced();
+        handleCompile();
         handleSaveDebounce();
         updateOutlineDebounced();
       });
@@ -178,8 +176,8 @@
       });
       cleanup.push(unsubscribeCompile);
 
-      const unsubscribeJumpTo = await appWindow.listen<{ line: number }>("jump_to_line", ({ payload }) => {
-        scrollToLine(payload.line);
+      const unsubscribeJumpTo = await appWindow.listen<{ line: number; column?: number }>("jump_to_position", ({ payload }) => {
+        scrollToPosition(payload.line, payload.column || 1);
       });
       cleanup.push(unsubscribeJumpTo);
     })();

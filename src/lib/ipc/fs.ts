@@ -30,3 +30,10 @@ export const writeFileText = (path: string, content: string): Promise<string> =>
 
 export const listDir = (path: string): Promise<FileItem[]> =>
   invoke<FileItem[]>("fs_list_dir", { path });
+
+export const deleteFile = (path: string): Promise<void> =>
+  invoke("fs_delete_file", { path });
+
+export const renameFile = (oldPath: string, newPath: string): Promise<void> =>
+  invoke("fs_rename_file", { oldPath, newPath });
+

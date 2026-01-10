@@ -139,3 +139,32 @@ pub async fn fs_list_dir<R: Runtime>(
 
     Ok(files)
 }
+
+#[tauri::command]
+pub async fn fs_delete_file<R: Runtime>(
+    window: Window<R>,
+    project_manager: State<'_, Arc<ProjectManager<R>>>,
+    path: PathBuf,
+) -> Result<()> {
+    let (_, abs_path) = project_path(&window, &project_manager, path)?;
+    if abs_path.is_dir() {
+        fs::remove_dir_all(&abs_path).map_err(Into::<Error>::into)?;
+    } else {
+        fs::remove_file(&abs_path).map_err(Into::<Error>::into)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn fs_rename_file<R: Runtime>(
+    window: Window<R>,
+    project_manager: State<'_, Arc<ProjectManager<R>>>,
+    old_path: PathBuf,
+    new_path: PathBuf,
+) -> Result<()> {
+    let (_, old_abs) = project_path(&window, &project_manager, &old_path)?;
+    let (_, new_abs) = project_path(&window, &project_manager, &new_path)?;
+    fs::rename(&old_abs, &new_abs).map_err(Into::<Error>::into)?;
+    Ok(())
+}
+

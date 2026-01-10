@@ -1,17 +1,16 @@
 <script lang="ts">
-  import { Package, Trash, Plus, CircleNotch } from "$lib/icons";
+  import { Package, Trash, Plus, CircleNotch, ArrowClockwise, Globe } from "$lib/icons";
   import { onMount } from "svelte";
-
-  interface InstalledPackage {
-    namespace: string;
-    name: string;
-    version: string;
-  }
+  import { listPackages, deletePackage, installPackage, type InstalledPackage } from "$lib/ipc";
+  import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
+  import { shell as tauriShell } from "@tauri-apps/api";
 
   let packages: InstalledPackage[] = [];
   let isLoading = true;
   let searchQuery = "";
   let isInstalling = false;
+
+  let contextMenu: { x: number; y: number; pkg: InstalledPackage } | null = null;
 
   const groupedPackages: Record<string, InstalledPackage[]> = {};
 
@@ -28,36 +27,84 @@
   const loadPackages = async () => {
     isLoading = true;
     try {
-      packages = [
-        { namespace: "preview", name: "tablex", version: "0.0.8" },
-        { namespace: "preview", name: "cetz", version: "0.3.1" },
-        { namespace: "preview", name: "fletcher", version: "0.5.3" },
-        { namespace: "local", name: "my-template", version: "1.0.0" },
-      ];
+      packages = await listPackages();
+    } catch (e) {
+      console.error("Failed to load packages:", e);
+      packages = [];
     } finally {
       isLoading = false;
     }
   };
 
   const handleRemovePackage = async (pkg: InstalledPackage) => {
-    console.log("Remove package:", pkg);
+    try {
+      await deletePackage(pkg.namespace, pkg.name, pkg.version);
+      packages = packages.filter(
+        p => !(p.namespace === pkg.namespace && p.name === pkg.name && p.version === pkg.version)
+      );
+    } catch (e) {
+      console.error("Failed to delete package:", e);
+    }
   };
 
   const handleInstallPackage = async () => {
     if (!searchQuery.trim()) return;
     isInstalling = true;
     try {
-      console.log("Install package:", searchQuery);
+      await installPackage(searchQuery.trim());
+      await loadPackages();
+    } catch (e) {
+      console.error("Failed to install package:", e);
     } finally {
       isInstalling = false;
       searchQuery = "";
     }
   };
 
+  const handleContextMenu = (event: MouseEvent, pkg: InstalledPackage) => {
+    event.preventDefault();
+    contextMenu = { x: event.clientX, y: event.clientY, pkg };
+  };
+
+  const openTypstUniverse = (pkg: InstalledPackage) => {
+    tauriShell.open(`https://typst.app/universe/package/${pkg.name}`);
+  };
+
+  const getContextMenuItems = (pkg: InstalledPackage): ContextMenuItem[] => [
+    {
+      label: "View on Typst Universe",
+      icon: Globe,
+      action: () => openTypstUniverse(pkg),
+    },
+    { label: "", action: () => {}, divider: true },
+    {
+      label: "Update",
+      icon: ArrowClockwise,
+      action: async () => {
+        await installPackage(`${pkg.namespace}/${pkg.name}`);
+        await loadPackages();
+      },
+    },
+    {
+      label: "Delete",
+      icon: Trash,
+      action: () => handleRemovePackage(pkg),
+    },
+  ];
+
   onMount(() => {
     loadPackages();
   });
 </script>
+
+{#if contextMenu}
+  <ContextMenu
+    items={getContextMenuItems(contextMenu.pkg)}
+    x={contextMenu.x}
+    y={contextMenu.y}
+    on:close={() => contextMenu = null}
+  />
+{/if}
 
 <div class="packages-panel">
   <div class="panel-header">
@@ -72,7 +119,7 @@
     <input
       type="text"
       class="install-input"
-      placeholder="Package name to install..."
+      placeholder="@preview/package:version"
       bind:value={searchQuery}
       on:keydown={(e) => e.key === "Enter" && handleInstallPackage()}
     />
@@ -105,14 +152,18 @@
         <div class="namespace-group">
           <div class="namespace-header">@{namespace}</div>
           {#each pkgs as pkg}
-            <div class="package-item">
+            <div
+              class="package-item"
+              on:contextmenu={(e) => handleContextMenu(e, pkg)}
+              role="listitem"
+            >
               <div class="package-info">
                 <span class="package-name">{pkg.name}</span>
                 <span class="package-version">{pkg.version}</span>
               </div>
               <button
                 class="remove-button"
-                on:click={() => handleRemovePackage(pkg)}
+                on:click|stopPropagation={() => handleRemovePackage(pkg)}
                 title="Remove package"
               >
                 <svelte:component this={Trash} size={14} />

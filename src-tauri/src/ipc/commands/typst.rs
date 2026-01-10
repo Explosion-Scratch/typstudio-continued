@@ -312,3 +312,139 @@ pub async fn typst_jump<R: Runtime>(
         end: Some((line + 1, column + 1)),
     }))
 }
+
+#[derive(Serialize, Debug)]
+pub struct InstalledPackage {
+    pub namespace: String,
+    pub name: String,
+    pub version: String,
+}
+
+fn get_package_cache_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        dirs::cache_dir().map(|p| p.join("typst").join("packages"))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var("XDG_CACHE_HOME")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| dirs::home_dir().map(|p| p.join(".cache")))
+            .map(|p| p.join("typst").join("packages"))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        dirs::cache_dir().map(|p| p.join("typst").join("packages"))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        None
+    }
+}
+
+#[tauri::command]
+pub async fn typst_list_packages() -> Result<Vec<InstalledPackage>> {
+    let cache_dir = get_package_cache_dir().ok_or(Error::Unknown)?;
+    let mut packages = Vec::new();
+
+    if !cache_dir.exists() {
+        return Ok(packages);
+    }
+
+    for namespace_entry in std::fs::read_dir(&cache_dir).map_err(Into::<Error>::into)? {
+        let namespace_entry = namespace_entry.map_err(Into::<Error>::into)?;
+        let namespace_path = namespace_entry.path();
+        if !namespace_path.is_dir() {
+            continue;
+        }
+        let namespace = namespace_entry.file_name().to_string_lossy().to_string();
+
+        for package_entry in std::fs::read_dir(&namespace_path).map_err(Into::<Error>::into)? {
+            let package_entry = package_entry.map_err(Into::<Error>::into)?;
+            let package_path = package_entry.path();
+            if !package_path.is_dir() {
+                continue;
+            }
+            let package_name = package_entry.file_name().to_string_lossy().to_string();
+
+            for version_entry in std::fs::read_dir(&package_path).map_err(Into::<Error>::into)? {
+                let version_entry = version_entry.map_err(Into::<Error>::into)?;
+                let version_path = version_entry.path();
+                if !version_path.is_dir() {
+                    continue;
+                }
+                let version = version_entry.file_name().to_string_lossy().to_string();
+
+                packages.push(InstalledPackage {
+                    namespace: namespace.clone(),
+                    name: package_name.clone(),
+                    version,
+                });
+            }
+        }
+    }
+
+    packages.sort_by(|a, b| {
+        a.namespace.cmp(&b.namespace)
+            .then_with(|| a.name.cmp(&b.name))
+            .then_with(|| b.version.cmp(&a.version))
+    });
+
+    Ok(packages)
+}
+
+#[tauri::command]
+pub async fn typst_delete_package(
+    namespace: String,
+    name: String,
+    version: String,
+) -> Result<()> {
+    let cache_dir = get_package_cache_dir().ok_or(Error::Unknown)?;
+    let package_version_path = cache_dir.join(&namespace).join(&name).join(&version);
+
+    if !package_version_path.exists() {
+        return Err(Error::Unknown);
+    }
+
+    std::fs::remove_dir_all(&package_version_path).map_err(Into::<Error>::into)?;
+
+    let package_path = cache_dir.join(&namespace).join(&name);
+    if package_path.read_dir().map_err(Into::<Error>::into)?.next().is_none() {
+        let _ = std::fs::remove_dir(&package_path);
+    }
+
+    let namespace_path = cache_dir.join(&namespace);
+    if namespace_path.read_dir().map_err(Into::<Error>::into)?.next().is_none() {
+        let _ = std::fs::remove_dir(&namespace_path);
+    }
+
+    debug!("Deleted package @{}/{}:{}", namespace, name, version);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn typst_install_package(spec: String) -> Result<()> {
+    use std::process::Command;
+
+    let output = Command::new("typst")
+        .args(["init", &format!("@{}", spec.trim_start_matches('@')), "/dev/null"])
+        .output()
+        .map_err(Into::<Error>::into)?;
+
+    if !output.status.success() {
+        let output = Command::new("typst")
+            .args(["compile", "--help"])
+            .output();
+        
+        if output.is_err() {
+            debug!("typst CLI not found, cannot install packages");
+            return Err(Error::Unknown);
+        }
+        return Err(Error::Unknown);
+    }
+
+    debug!("Installed package {}", spec);
+    Ok(())
+}
+
