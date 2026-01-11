@@ -2,13 +2,23 @@
   import ExplorerNode from "./ExplorerNode.svelte";
   import { project, shell } from "$lib/stores";
   import { createFile } from "$lib/ipc";
-  import { Plus } from "$lib/icons";
+  import { Plus, ArrowClockwise } from "$lib/icons";
+  import { appWindow } from "@tauri-apps/api/window";
 </script>
 
 <div class="explorer-tree">
   {#if $project}
     <div class="tree-header">
       <span class="tree-title">Files</span>
+      <button
+        class="icon-button"
+        on:click={() => {
+          appWindow.emit("fs_refresh", { path: "" });
+        }}
+        title="Refresh"
+      >
+        <ArrowClockwise size={14} weight="bold" />
+      </button>
       <button
         class="icon-button"
         on:click={() => {

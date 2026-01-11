@@ -3,17 +3,27 @@
   import Preview from "../components/Preview.svelte";
   import { project, shell, recentProjects } from "../lib/stores";
   import type { ProjectChangeEvent, TypstJump } from "../lib/ipc";
-  import { listDir, revealPath } from "../lib/ipc";
+  import { listDir, revealPath, renameFile } from "../lib/ipc";
   import WelcomeScreen from "../components/WelcomeScreen.svelte";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import { onMount } from "svelte";
   import { appWindow } from "@tauri-apps/api/window";
+  import { open } from "@tauri-apps/api/shell";
   import SidePanel from "../components/SidePanel.svelte";
   import Modals from "../components/ShellModal.svelte";
   import { fade } from "svelte/transition";
   import Resizer from "../components/Resizer.svelte";
   import FileViewer from "../components/FileViewer.svelte";
-  import { Eye, Pencil, CircleNotch } from "$lib/icons";
+  import ContextMenu, { type ContextMenuItem } from "../components/ContextMenu.svelte";
+  import {
+    Eye,
+    Pencil,
+    CircleNotch,
+    FileTextDuotone,
+    FolderOpenDuotone,
+    FolderDuotone,
+    Export,
+  } from "$lib/icons";
 
   let containerWidth = 0;
   let containerRef: HTMLDivElement;
@@ -25,6 +35,11 @@
   let exportStatus: string | null = null;
   let isResizing = false;
 
+  let showTitleMenu = false;
+  let titleMenuX = 0;
+  let titleMenuY = 0;
+  let titleMenuItems: ContextMenuItem[] = [];
+
   const MIN_SIDEBAR_CONTENT = 150;
   const COLLAPSE_THRESHOLD = 120;
   const MIN_PANE_WIDTH = 500;
@@ -34,15 +49,18 @@
   const EDITABLE_EXTENSIONS = [".typ", ".bib", ".md", ".txt"];
 
   $: selectedExtension = $shell.selectedFile?.toLowerCase().split(".").pop() || "";
-  $: isTypstFile = TYPST_EXTENSIONS.some(ext => $shell.selectedFile?.toLowerCase().endsWith(ext));
-  $: isEditableFile = EDITABLE_EXTENSIONS.some(ext => $shell.selectedFile?.toLowerCase().endsWith(ext));
+  $: isTypstFile = TYPST_EXTENSIONS.some((ext) => $shell.selectedFile?.toLowerCase().endsWith(ext));
+  $: isEditableFile = EDITABLE_EXTENSIONS.some((ext) =>
+    $shell.selectedFile?.toLowerCase().endsWith(ext),
+  );
 
   $: canShowSidebarContent = containerWidth >= 500;
   $: showSidebarContent = $shell.sidebarVisible && canShowSidebarContent;
 
   $: projectName = $project?.root?.split("/").pop() || "";
   $: fileName = $shell.selectedFile?.split("/").pop() || "";
-  $: titleDisplay = projectName && fileName ? `${projectName} — ${fileName}` : fileName || projectName || "";
+  $: titleDisplay =
+    projectName && fileName ? `${projectName} — ${fileName}` : fileName || projectName || "";
 
   $: availableContentWidth = contentAreaWidth;
   $: canShowBothPanes = availableContentWidth >= MIN_PANE_WIDTH * 2;
@@ -75,13 +93,13 @@
 
   const handleSidebarContentResize = (newSize: number, isDragging: boolean = false) => {
     isResizing = isDragging;
-    
+
     if (newSize < COLLAPSE_THRESHOLD && isDragging) {
       shell.setSidebarVisible(false);
       sidebarContentWidth = MIN_SIDEBAR_CONTENT;
       return;
     }
-    
+
     sidebarContentWidth = Math.max(MIN_SIDEBAR_CONTENT, newSize);
     if (containerWidth > 0) {
       shell.setSidebarWidthPercent((sidebarContentWidth / containerWidth) * 100);
@@ -113,14 +131,159 @@
     }
   };
 
-  const handleTitleClick = async () => {
-    if ($project?.root) {
+  const handleTitleClick = async (event: MouseEvent) => {
+    if (event.ctrlKey) return;
+    handleShowInFinder();
+  };
+
+  const handleOpenFolderDialog = async () => {
+    try {
+      const { open: openDialog } = await import("@tauri-apps/api/dialog");
+      const { invoke } = await import("@tauri-apps/api");
+
+      const selected = await openDialog({
+        directory: true,
+        multiple: false,
+        title: "Open Folder",
+      });
+
+      if (selected && typeof selected === "string") {
+        await invoke("open_project", { path: selected });
+      }
+    } catch (e) {
+      console.error("Failed to open folder dialog:", e);
+    }
+  };
+
+  const handlePrintPdf = async () => {
+    try {
+      const { save } = await import("@tauri-apps/api/dialog");
+      const { invoke } = await import("@tauri-apps/api");
+
+      const savePath = await save({
+        title: "Export PDF",
+        defaultPath: "export.pdf",
+        filters: [{ name: "PDF", extensions: ["pdf"] }],
+      });
+
+      if (savePath) {
+        exportStatus = "Exporting PDF...";
+        await invoke("export_pdf", { path: savePath });
+        exportStatus = null;
+      }
+    } catch (e) {
+      console.error("Failed to export PDF:", e);
+      exportStatus = null;
+    }
+  };
+
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "p") {
+      event.preventDefault();
+      handlePrintPdf();
+    }
+  };
+
+  const handleRename = () => {
+    if (!$shell.selectedFile) return;
+    const currentPath = $shell.selectedFile;
+    const currentName = currentPath.split("/").pop() || "";
+
+    shell.createModal({
+      type: "input",
+      title: "Rename File",
+      placeholder: currentName,
+      callback: async (newName) => {
+        if (newName && newName !== currentName) {
+          try {
+            const parentDir = currentPath.substring(0, currentPath.lastIndexOf("/"));
+            const newPath = `${parentDir}/${newName}`;
+
+            await renameFile(currentPath, newPath);
+            shell.selectFile(newPath);
+          } catch (e) {
+            console.error("Failed to rename file:", e);
+          }
+        }
+      },
+    });
+  };
+
+  const handleShowInFinder = async () => {
+    if ($shell.selectedFile) {
       try {
-        await revealPath("/");
+        await revealPath($shell.selectedFile);
       } catch (e) {
-        console.error("Failed to reveal project:", e);
+        console.error("Failed to reveal path:", e);
       }
     }
+  };
+
+
+  const handleExportPdf = () => {
+    handlePrintPdf();
+  };
+
+  const handleTitleContextMenu = (event: MouseEvent) => {
+    event.preventDefault();
+    titleMenuX = event.clientX;
+    titleMenuY = event.clientY;
+
+    titleMenuItems = [];
+
+    if ($shell.selectedFile) {
+      titleMenuItems = [
+        {
+          label: "Rename",
+          icon: Pencil,
+          action: handleRename,
+        },
+        {
+          label: "Reveal in Finder",
+          icon: FileTextDuotone,
+          action: handleShowInFinder,
+        },
+        {
+          label: "Reveal Folder",
+          icon: FolderDuotone,
+          action: async () => {
+            if ($shell.selectedFile) {
+              try {
+                const parentDir =
+                  $shell.selectedFile.substring(0, $shell.selectedFile.lastIndexOf("/")) || "/";
+                await revealPath(parentDir);
+              } catch (e) {
+                console.error(e);
+              }
+            }
+          },
+        },
+        {
+          label: "",
+          action: () => {},
+          divider: true,
+        },
+        {
+          label: "Export PDF",
+          icon: Export,
+          action: handleExportPdf,
+          disabled: !isTypstFile,
+        },
+        {
+          label: "",
+          action: () => {},
+          divider: true,
+        },
+      ];
+    }
+
+    titleMenuItems.push({
+      label: "Open Folder...",
+      icon: FolderOpenDuotone,
+      action: handleOpenFolderDialog,
+    });
+
+    showTitleMenu = true;
   };
 
   onMount(() => {
@@ -133,111 +296,103 @@
     const resizeObserver = new ResizeObserver(() => {
       handleWindowResize();
     });
-    
+
     const observeContentArea = () => {
       if (contentAreaRef) {
         resizeObserver.observe(contentAreaRef);
       }
     };
-    
+
     observeContentArea();
     cleanup.push(() => resizeObserver.disconnect());
 
-    appWindow.listen<ProjectChangeEvent>("project_changed", async ({ payload }) => {
-      shell.selectFile(undefined);
-      project.set(payload.project);
+    appWindow
+      .listen<ProjectChangeEvent>("project_changed", async ({ payload }) => {
+        shell.selectFile(undefined);
+        project.set(payload.project);
 
-      if (payload.project) {
-        recentProjects.addProject(payload.project.root);
+        if (payload.project) {
+          recentProjects.addProject(payload.project.root);
 
-        try {
-          const files = await listDir("/");
-          const mainFile = files.find(f => f.name === "main.typ");
-          if (mainFile) {
-            shell.selectFile("/main.typ");
-          } else {
-            const firstTyp = files.find(f => f.name.endsWith(".typ"));
-            if (firstTyp) {
-              shell.selectFile("/" + firstTyp.name);
+          try {
+            const files = await listDir("/");
+            const mainFile = files.find((f) => f.name === "main.typ");
+            if (mainFile) {
+              shell.selectFile("/main.typ");
+            } else {
+              const firstTyp = files.find((f) => f.name.endsWith(".typ"));
+              if (firstTyp) {
+                shell.selectFile("/" + firstTyp.name);
+              }
             }
+
+            setTimeout(() => {
+              appWindow.emit("trigger_compile");
+            }, 100);
+          } catch (e) {
+            console.error("Failed to list files:", e);
           }
-          
+        }
+      })
+      .then((unlisten) => {
+        cleanup.push(unlisten);
+      });
+
+    appWindow
+      .listen<TypstJump>("editor_goto_location", ({ payload }) => {
+        if (payload.filepath !== $shell.selectedFile) {
+          shell.selectFile(payload.filepath);
           setTimeout(() => {
-            appWindow.emit("trigger_compile");
-          }, 100);
-        } catch (e) {
-          console.error("Failed to list files:", e);
-        }
-      }
-    }).then((unlisten) => {
-      cleanup.push(unlisten);
-    });
-
-    appWindow.listen<TypstJump>("editor_goto_location", ({ payload }) => {
-      if (payload.filepath !== $shell.selectedFile) {
-        shell.selectFile(payload.filepath);
-        setTimeout(() => {
+            if (payload.start) {
+              appWindow.emit("jump_to_position", {
+                line: payload.start[0],
+                column: payload.start[1],
+              });
+            }
+          }, 150);
+        } else {
           if (payload.start) {
-            appWindow.emit("jump_to_position", { line: payload.start[0], column: payload.start[1] });
+            appWindow.emit("jump_to_position", {
+              line: payload.start[0],
+              column: payload.start[1],
+            });
           }
-        }, 150);
-      } else {
-        if (payload.start) {
-          appWindow.emit("jump_to_position", { line: payload.start[0], column: payload.start[1] });
         }
-      }
-    }).then((unlisten) => {
-      cleanup.push(unlisten);
-    });
+      })
+      .then((unlisten) => {
+        cleanup.push(unlisten);
+      });
 
-    appWindow.listen("toggle_sidebar", () => {
-      shell.toggleSidebar();
-    }).then((unlisten) => {
-      cleanup.push(unlisten);
-    });
+    appWindow
+      .listen("toggle_sidebar", () => {
+        shell.toggleSidebar();
+      })
+      .then((unlisten) => {
+        cleanup.push(unlisten);
+      });
 
-    appWindow.listen<{ path: string }>("export_file_as_pdf", ({ payload }) => {
-      exportStatus = "Exporting PDF...";
-      setTimeout(() => { exportStatus = null; }, 2000);
-    }).then((unlisten) => {
-      cleanup.push(unlisten);
-    });
-
-    appWindow.listen<{ path: string }>("export_file_as_svg", ({ payload }) => {
-      exportStatus = "Exporting SVG...";
-      setTimeout(() => { exportStatus = null; }, 2000);
-    }).then((unlisten) => {
-      cleanup.push(unlisten);
-    });
-
-    const handlePrintPdf = async () => {
-      try {
-        const { save } = await import("@tauri-apps/api/dialog");
-        const { invoke } = await import("@tauri-apps/api");
-        
-        const savePath = await save({
-          title: "Export PDF",
-          defaultPath: "export.pdf",
-          filters: [{ name: "PDF", extensions: ["pdf"] }],
-        });
-        
-        if (savePath) {
-          exportStatus = "Exporting PDF...";
-          await invoke("export_pdf", { path: savePath });
+    appWindow
+      .listen<{ path: string }>("export_file_as_pdf", ({ payload }) => {
+        exportStatus = "Exporting PDF...";
+        setTimeout(() => {
           exportStatus = null;
-        }
-      } catch (e) {
-        console.error("Failed to export PDF:", e);
-        exportStatus = null;
-      }
-    };
+        }, 2000);
+      })
+      .then((unlisten) => {
+        cleanup.push(unlisten);
+      });
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === "p") {
-        event.preventDefault();
-        handlePrintPdf();
-      }
-    };
+    appWindow
+      .listen<{ path: string }>("export_file_as_svg", ({ payload }) => {
+        exportStatus = "Exporting SVG...";
+        setTimeout(() => {
+          exportStatus = null;
+        }, 2000);
+      })
+      .then((unlisten) => {
+        cleanup.push(unlisten);
+      });
+
     window.addEventListener("keydown", handleKeyDown);
     cleanup.push(() => window.removeEventListener("keydown", handleKeyDown));
 
@@ -245,7 +400,7 @@
     shell.setInitializing(false);
 
     return () => {
-      cleanup.forEach(fn => fn());
+      cleanup.forEach((fn) => fn());
     };
   });
 </script>
@@ -254,10 +409,24 @@
   <Modals />
 
   <div class="title-bar" data-tauri-drag-region>
-    <button class="title-button" on:click={handleTitleClick} title="Reveal in Finder">
+    <button
+      class="title-button"
+      on:click={handleTitleClick}
+      on:contextmenu={handleTitleContextMenu}
+      title="Reveal in Finder (Right click to open folder)"
+    >
       <span class="title-text">{titleDisplay}</span>
     </button>
   </div>
+
+  {#if showTitleMenu}
+    <ContextMenu
+      bind:x={titleMenuX}
+      bind:y={titleMenuY}
+      items={titleMenuItems}
+      on:close={() => (showTitleMenu = false)}
+    />
+  {/if}
 
   {#if exportStatus}
     <div class="export-overlay" transition:fade={{ duration: 150 }}>
@@ -272,10 +441,13 @@
     <WelcomeScreen />
   {:else}
     <div class="editor-layout" in:fade={{ duration: 150 }}>
-      <div class="sidebar-wrapper" style={showSidebarContent ? `width: ${sidebarContentWidth + ICON_BAR_WIDTH}px` : ''}>
+      <div
+        class="sidebar-wrapper"
+        style={showSidebarContent ? `width: ${sidebarContentWidth + ICON_BAR_WIDTH}px` : ""}
+      >
         <SidePanel showContent={showSidebarContent} />
       </div>
-      
+
       {#if showSidebarContent}
         <Resizer
           direction="horizontal"
@@ -290,10 +462,14 @@
       <div bind:this={contentAreaRef} class="content-area">
         {#if $shell.selectedFile}
           {#if isEditableFile}
-            <div 
-              class="editor-container" 
+            <div
+              class="editor-container"
               class:hidden={!showEditor}
-              style={$shell.viewMode === 'both' ? `width: ${editorWidth}px` : showEditor ? 'flex: 1' : ''}
+              style={$shell.viewMode === "both"
+                ? `width: ${editorWidth}px`
+                : showEditor
+                  ? "flex: 1"
+                  : ""}
             >
               <Editor class="editor-pane" path={$shell.selectedFile} />
             </div>
@@ -361,6 +537,7 @@
     align-items: center;
     justify-content: center;
     z-index: 100;
+    user-select: none;
   }
 
   .title-button {
@@ -419,7 +596,9 @@
   }
 
   @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .editor-layout {
