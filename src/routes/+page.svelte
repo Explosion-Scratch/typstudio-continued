@@ -379,6 +379,11 @@
 
     appWindow
       .listen<TypstJump>("editor_goto_location", ({ payload }) => {
+        // If editor is not showing, switch to editor view
+        if ($shell.viewMode === "preview") {
+          shell.setViewMode("editor");
+        }
+
         if (payload.filepath !== $shell.selectedFile) {
           shell.selectFile(payload.filepath);
           setTimeout(() => {
