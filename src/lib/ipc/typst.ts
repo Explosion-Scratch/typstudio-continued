@@ -67,6 +67,9 @@ export interface TypstJump {
   filepath: string;
   start: [number, number] | null; // line, column (1-indexed)
   end: [number, number] | null;
+  text?: string;
+  offset?: number;
+  node_kind?: string;
 }
 
 export const jump = (page: number, x: number, y: number): Promise<TypstJump | null> =>
@@ -91,12 +94,14 @@ export interface TypstDocumentPosition {
   page: number;
   x: number;
   y: number;
+  text?: string;
+  node_kind?: string;
 }
 
 export const jumpFromCursor = (
   path: string,
   content: string,
-  offset: number
+  byteOffset: number
 ): Promise<TypstDocumentPosition | null> =>
-  invoke<TypstDocumentPosition | null>("typst_jump_from_cursor", { path, content, offset });
+  invoke<TypstDocumentPosition | null>("typst_jump_from_cursor", { path, content, byteOffset });
 

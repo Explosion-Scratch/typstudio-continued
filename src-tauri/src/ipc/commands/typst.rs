@@ -24,6 +24,9 @@ pub struct TypstJump {
     filepath: String,
     start: Option<(usize, usize)>, // line, column
     end: Option<(usize, usize)>,
+    text: Option<String>,
+    offset: Option<usize>,
+    node_kind: Option<String>,
 }
 
 #[derive(Serialize_repr, Debug)]
@@ -268,6 +271,76 @@ pub async fn typst_autocomplete<R: Runtime>(
     })
 }
 
+fn find_precise_position(
+    frame: &typst::layout::Frame,
+    target_span: typst::syntax::Span,
+    target_offset: u16,
+) -> Option<typst::layout::Point> {
+    use typst::layout::FrameItem;
+    for (pos, item) in frame.items() {
+        match item {
+            FrameItem::Text(text) => {
+                let mut x = pos.x;
+                for glyph in &text.glyphs {
+                    if glyph.span.0 == target_span {
+                        if glyph.span.1 >= target_offset {
+                            return Some(typst::layout::Point::new(x, pos.y));
+                        }
+                    }
+                    x += glyph.x_advance.at(text.size);
+                }
+            }
+            FrameItem::Group(group) => {
+                let local_pos = find_precise_position(&group.frame, target_span, target_offset);
+                if let Some(mut point) = local_pos {
+                    point = point.transform(group.transform);
+                    point.x += pos.x;
+                    point.y += pos.y;
+                    return Some(point);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn find_precise_jump(
+    frame: &typst::layout::Frame,
+    click: typst::layout::Point,
+) -> Option<(typst::syntax::Span, u16)> {
+    use typst::layout::FrameItem;
+    for (pos, item) in frame.items().rev() {
+        let rel_click = click - *pos;
+        match item {
+            FrameItem::Text(text) => {
+                let height = text.size;
+                // Rough bounding box check for text line
+                // Typst y is baseline, so we check around the baseline
+                if rel_click.y >= -height && rel_click.y <= height * 0.5 {
+                    let mut current_x = typst::layout::Abs::zero();
+                    for glyph in &text.glyphs {
+                        let width = glyph.x_advance.at(text.size);
+                        if rel_click.x >= current_x && rel_click.x <= current_x + width {
+                            return Some(glyph.span);
+                        }
+                        current_x += width;
+                    }
+                }
+            }
+            FrameItem::Group(group) => {
+                // Invert transform if possible, but for simple jumps we just handle translation
+                // since most Typst groups are just translated.
+                if let Some(res) = find_precise_jump(&group.frame, rel_click) {
+                    return Some(res);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 #[tauri::command]
 pub async fn typst_jump<R: Runtime>(
     window: tauri::Window<R>,
@@ -288,28 +361,64 @@ pub async fn typst_jump<R: Runtime>(
         typst::layout::Abs::pt(y)
     );
 
-    let jump = typst_ide::jump_from_click(&*world, doc, &page_doc.frame, point);
+    // Try precise jump first
+    let (span, span_offset) = find_precise_jump(&page_doc.frame, point)
+        .or_else(|| {
+            // Fallback to standard IDE jump if precise fails
+            let jump = typst_ide::jump_from_click(&*world, doc, &page_doc.frame, point);
+            match jump {
+                Some(typst_ide::Jump::File(id, offset)) => {
+                    let source = world.source(id).ok()?;
+                    let node = typst::syntax::LinkedNode::new(source.root())
+                        .leaf_at(offset as usize, typst::syntax::Side::Before)?;
+                    Some((node.span(), 0))
+                }
+                _ => None,
+            }
+        })
+        .ok_or(Error::Unknown)?;
 
-    let (source_id, offset) = match jump {
-        Some(typst_ide::Jump::File(id, offset)) => (id, offset),
-        _ => return Ok(None),
-    };
-
+    let source_id = span.id().ok_or(Error::Unknown)?;
     let source = world.source(source_id).map_err(Into::<Error>::into)?;
     
-    // In Typst 0.14, Source::lines() returns a Lines struct which has conversion methods.
+    let range = source.find(span).ok_or(Error::Unknown)?.range();
+    let offset = range.start + span_offset as usize;
+
     let lines = source.lines();
     let line = lines.byte_to_line(offset).ok_or(Error::Unknown)?;
     let column = lines.byte_to_column(offset).ok_or(Error::Unknown)?;
 
-    // Get relative path from project root
     let path = source.id().vpath().as_rootless_path().to_string_lossy().to_string();
     let filepath = if path.starts_with("/") { path } else { format!("/{}", path) };
+
+    // Get a snippet of text around the offset
+    let text = source.text();
+    let snippet_start = offset.saturating_sub(50);
+    let snippet_end = (offset + 50).min(text.len());
+    
+    let mut actual_start = snippet_start;
+    while actual_start > 0 && !text.is_char_boundary(actual_start) {
+        actual_start -= 1;
+    }
+    let mut actual_end = snippet_end;
+    while actual_end < text.len() && !text.is_char_boundary(actual_end) {
+        actual_end += 1;
+    }
+    
+    let snippet = text[actual_start..actual_end].to_string();
+
+    // Get syntax node info
+    let node_kind = typst::syntax::LinkedNode::new(source.root())
+        .leaf_at(offset, typst::syntax::Side::Before)
+        .map(|n| format!("{:?}", n.kind()));
 
     Ok(Some(TypstJump {
         filepath,
         start: Some((line + 1, column + 1)),
         end: Some((line + 1, column + 1)),
+        text: Some(snippet),
+        offset: Some(offset),
+        node_kind,
     }))
 }
 
@@ -318,6 +427,8 @@ pub struct TypstDocumentPosition {
     page: usize,
     x: f64,
     y: f64,
+    text: Option<String>,
+    node_kind: Option<String>,
 }
 
 #[tauri::command]
@@ -326,7 +437,7 @@ pub async fn typst_jump_from_cursor<R: Runtime>(
     project_manager: tauri::State<'_, Arc<ProjectManager<R>>>,
     path: PathBuf,
     content: String,
-    offset: usize,
+    byte_offset: usize,
 ) -> Result<Option<TypstDocumentPosition>> {
     let project = project(&window, &project_manager)?;
     let world = project.world.lock().unwrap();
@@ -334,26 +445,66 @@ pub async fn typst_jump_from_cursor<R: Runtime>(
 
     let doc = cache.document.as_ref().ok_or(Error::Unknown)?;
 
-    let byte_offset = content
-        .char_indices()
-        .nth(offset)
-        .map(|a| a.0)
-        .unwrap_or(content.len());
-
     let source_id = world
         .slot_update(&*path, Some(content.clone()))
         .map_err(Into::<Error>::into)?;
 
     let source = world.source(source_id).map_err(Into::<Error>::into)?;
 
-    let positions = typst_ide::jump_from_cursor(doc, &source, byte_offset);
+    let node = typst::syntax::LinkedNode::new(source.root())
+        .leaf_at(byte_offset, typst::syntax::Side::Before)
+        .ok_or(Error::Unknown)?;
+        
+    let target_span = node.span();
+    let target_offset = (byte_offset - node.offset()).min(u16::MAX as usize) as u16;
 
-    if let Some(position) = positions.first() {
-        Ok(Some(TypstDocumentPosition {
+    // Search for precise position in pages
+    let mut result_pos = None;
+    for (i, page) in doc.pages.iter().enumerate() {
+        if let Some(point) = find_precise_position(&page.frame, target_span, target_offset) {
+            result_pos = Some(TypstDocumentPosition {
+                page: i,
+                x: point.x.to_pt(),
+                y: point.y.to_pt(),
+                text: None, // Will fill below
+                node_kind: Some(format!("{:?}", node.kind())),
+            });
+            break;
+        }
+    }
+
+    // Fallback to standard IDE jump if precise search failed
+    let result_pos = if let Some(pos) = result_pos {
+        Some(pos)
+    } else {
+        let positions = typst_ide::jump_from_cursor(doc, &source, byte_offset);
+        positions.first().map(|position| TypstDocumentPosition {
             page: position.page.get().saturating_sub(1),
             x: position.point.x.to_pt(),
             y: position.point.y.to_pt(),
-        }))
+            text: None,
+            node_kind: Some(format!("{:?}", node.kind())),
+        })
+    };
+
+    if let Some(mut pos) = result_pos {
+        // Get a snippet of text around the offset
+        let text = source.text();
+        let snippet_start = byte_offset.saturating_sub(50);
+        let snippet_end = (byte_offset + 50).min(text.len());
+        
+        let mut actual_start = snippet_start;
+        while actual_start > 0 && !text.is_char_boundary(actual_start) {
+            actual_start -= 1;
+        }
+        let mut actual_end = snippet_end;
+        while actual_end < text.len() && !text.is_char_boundary(actual_end) {
+            actual_end += 1;
+        }
+        
+        let snippet = text[actual_start..actual_end].to_string();
+        pos.text = Some(snippet);
+        Ok(Some(pos))
     } else {
         Ok(None)
     }

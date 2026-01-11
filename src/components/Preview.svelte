@@ -13,6 +13,7 @@
   let container: HTMLDivElement;
   let pagesContainer: HTMLDivElement;
   let previousEvent: MouseEvent | undefined;
+  let flashMarker: { x: number; y: number } | null = null;
 
   let isDragging = false;
   let mouseDownPosition: { x: number; y: number; time: number } | null = null;
@@ -75,6 +76,14 @@
 
     const result = await jump(pageIndex, ptX, ptY);
     if (result && result.start) {
+      console.log("Jump Target Received (Preview -> Editor):", {
+        file: result.filepath,
+        line: result.start[0],
+        column: result.start[1],
+        offset: result.offset,
+        kind: result.node_kind,
+        context: result.text?.trim()
+      });
       appWindow.emit("editor_goto_location", result);
     }
   };
@@ -178,7 +187,7 @@
       );
       cleanup.push(unsubscribeToggleVisibility);
 
-      const unsubscribeScrollToPos = await appWindow.listen<{ page: number; x: number; y: number }>(
+      const unsubscribeScrollToPos = await appWindow.listen<{ page: number; x: number; y: number; flash?: boolean }>(
         "scroll_to_position_in_preview",
         ({ payload }) => {
           if (!container) return;
@@ -197,6 +206,15 @@
             const targetLeft = absolutePageLeft + pixelX - container.clientWidth / 2;
 
             container.scrollTo({ top: targetTop, left: targetLeft, behavior: "smooth" });
+
+            if (pagesContainer && payload.flash !== false) {
+              const pagesRect = pagesContainer.getBoundingClientRect();
+              
+              flashMarker = {
+                x: pageRect.left - pagesRect.left + pixelX,
+                y: pageRect.top - pagesRect.top + pixelY,
+              };
+            }
           }
         }
       );
@@ -244,6 +262,17 @@
             />
           {/if}
         {/each}
+        {#if flashMarker}
+          {#key flashMarker}
+            <div
+              class="flash-marker"
+              style="top: {flashMarker.y}px; left: {flashMarker.x}px;"
+              on:animationend={() => {
+                flashMarker = null;
+              }}
+            ></div>
+          {/key}
+        {/if}
       </div>
       <ZoomControls
         {zoom}
@@ -277,9 +306,44 @@
     flex-direction: column;
     gap: var(--space-lg);
     transition: opacity 150ms ease;
+    position: relative;
   }
 
   .pages-wrapper.fading {
     opacity: 0.7;
+  }
+
+  .flash-marker {
+    position: absolute;
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 9px solid var(--color-accent);
+    transform: rotate(-45deg);
+    transform-origin: top left;
+    
+    pointer-events: none;
+    animation: arrow-soft-fade 0.8s ease-out forwards;
+    z-index: 100;
+  }
+
+  @keyframes arrow-soft-fade {
+    0% {
+      opacity: 0;
+      transform: rotate(-45deg) translate(5px, 5px);
+    }
+    20% {
+      opacity: 0.6;
+      transform: rotate(-45deg) translate(0, 0);
+    }
+    80% {
+      opacity: 0.6;
+      transform: rotate(-45deg) translate(0, 0);
+    }
+    100% {
+      opacity: 0;
+      transform: rotate(-45deg) translate(0, 0);
+    }
   }
 </style>

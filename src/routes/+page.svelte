@@ -61,6 +61,18 @@
     editorWidth = Math.floor(contentAreaWidth / 2);
   }
 
+  // Handle recompile on preview show/hide
+  let lastShowPreview: boolean | undefined = undefined;
+  $: if (showPreview !== lastShowPreview) {
+    lastShowPreview = showPreview;
+    appWindow.emit("trigger_compile");
+  }
+
+  // Ensure layout is recalculated when content area appears
+  $: if (contentAreaRef) {
+    handleWindowResize();
+  }
+
   const handleSidebarContentResize = (newSize: number, isDragging: boolean = false) => {
     isResizing = isDragging;
     
@@ -111,9 +123,17 @@
     const resizeObserver = new ResizeObserver(() => {
       handleWindowResize();
     });
-    if (contentAreaRef) {
-      resizeObserver.observe(contentAreaRef);
-    }
+    
+    // We need to poll for contentAreaRef or use an interval/mutation observer 
+    // because it's conditionally rendered. 
+    // Better: just check it every time the project changes or use a reactive statement below.
+    const observeContentArea = () => {
+      if (contentAreaRef) {
+        resizeObserver.observe(contentAreaRef);
+      }
+    };
+    
+    observeContentArea();
     cleanup.push(() => resizeObserver.disconnect());
 
     appWindow.listen<ProjectChangeEvent>("project_changed", async ({ payload }) => {
