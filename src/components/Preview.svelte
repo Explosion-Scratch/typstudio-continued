@@ -156,7 +156,15 @@
       const unsubscribeCompile = await appWindow.listen<TypstCompileEvent>(
         "typst_compile",
         ({ payload }) => {
+          console.log("[Preview] typst_compile event received", payload);
+          // @ts-ignore
+          if (payload.event && payload.payload) {
+             console.log("[Preview] Unwrapping payload", payload.payload);
+             // handle the double wrapped case if that's what's happening
+             // But for now just log it
+          }
           const { document, diagnostics } = payload;
+          console.log("[Preview] Destructured:", { document, diagnostics });
 
           currentErrors = diagnostics || [];
           shell.setCurrentErrors(currentErrors);

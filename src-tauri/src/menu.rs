@@ -1,4 +1,3 @@
-use crate::ipc::events::view;
 use crate::project::{Project, ProjectManager};
 use std::fs;
 use std::sync::Arc;
@@ -67,7 +66,7 @@ pub fn handle_menu_event<R: Runtime>(e: WindowMenuEvent<R>) {
             let _ = e.window().emit("toggle_sidebar", ());
         }
         "view_toggle_preview" => {
-            view::toggle_preview_visibility(e.window());
+            let _ = e.window().emit("toggle_preview", ());
         }
         "packages_install" => {
             let _ = e.window().emit("show_install_package", ());

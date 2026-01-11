@@ -244,21 +244,22 @@
         updateOutline();
       });
 
-  const handleCompileDebounced = debounce(handleCompile, 300);
-
       editorInstance.onDidChangeModelContent((e: IModelContentChangedEvent) => {
         clearMarkersWhileTyping();
         markTypingDone();
-        handleCompileDebounced();
+        handleCompile();
         handleSaveDebounce();
         updateOutlineDebounced();
+      });
+
+      editorInstance.onMouseDown(() => {
+        handleCursorJump();
       });
 
       editorInstance.onDidChangeCursorPosition(() => {
         const pos = getCursorPosition();
         if (pos) {
           appWindow.emit("editor_cursor_changed", pos);
-          handleCursorJump();
         }
       });
 

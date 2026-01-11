@@ -1,21 +1,14 @@
 use super::{Error, Result};
+use crate::compiler::{CompileRequest, Compiler}; // NEW
 use crate::ipc::commands::project;
 use crate::ipc::model::TypstRenderResponse;
-use crate::ipc::{
-    TypstCompileEvent, TypstDiagnosticSeverity, TypstDocument, TypstSourceDiagnostic,
-};
 use crate::project::ProjectManager;
 use log::debug;
 use serde::Serialize;
 use serde_repr::Serialize_repr;
-use siphasher::sip128::{Hasher128, SipHasher};
-use std::hash::Hash;
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Instant;
 use tauri::Runtime;
-use typst::diag::Severity;
 use typst::World;
 use typst_ide::{Completion, CompletionKind};
 
@@ -73,147 +66,22 @@ impl From<Completion> for TypstCompletion {
     }
 }
 
+// REFACTORED COMMAND
 #[tauri::command]
 pub async fn typst_compile<R: Runtime>(
     window: tauri::Window<R>,
-    project_manager: tauri::State<'_, Arc<ProjectManager<R>>>,
+    compiler: tauri::State<'_, Arc<Compiler<R>>>,
     path: PathBuf,
     content: String,
     request_id: u64,
 ) -> Result<()> {
-    let project = project(&window, &project_manager)?;
+    compiler.update(CompileRequest {
+        path,
+        content,
+        request_id,
+        window_label: window.label().to_string(),
+    });
     
-    println!("Backend handling compile request_id: {}", request_id);
-
-    project.current_compile_request_id.store(request_id, Ordering::SeqCst);
-
-    println!("Backend waiting for lock request_id: {}", request_id);
-    let mut world = project.world.lock().unwrap();
-    println!("Backend acquired lock request_id: {}", request_id);
-
-    // Check if a newer request has come in while we were waiting for the lock
-    let current_request = project.current_compile_request_id.load(Ordering::SeqCst);
-    if current_request != request_id {
-        println!("Backend aborting stale compile request {} (current: {})", request_id, current_request);
-        debug!("aborting stale compile request {} (current: {})", request_id, current_request);
-        return Ok(());
-    }
-
-    let source_id = world
-        .slot_update(&path, Some(content.clone()))
-        .map_err(Into::<Error>::into)?;
-
-    // Set the processed file as main
-    world.set_main_path(typst::syntax::VirtualPath::new(&path));
-
-    if !world.is_main_set() {
-        let config = project.config.read().unwrap();
-        if config.apply_main(&project, &mut world).is_err() {
-            debug!("skipped compilation for {:?} (main not set)", project);
-            println!("Backend skipped compilation (main not set) request_id: {}", request_id);
-            return Ok(());
-        }
-    }
-
-    debug!("compiling {:?}: {:?} (request_id: {})", path, project, request_id);
-    let now = Instant::now();
-    println!("Backend calling typst::compile request_id: {}", request_id);
-    let result = typst::compile::<typst::layout::PagedDocument>(&*world);
-    match result.output {
-        Ok(doc) => {
-            let current_request = project.current_compile_request_id.load(Ordering::SeqCst);
-            if current_request != request_id {
-                debug!("skipping stale compile result for request {} (current: {})", request_id, current_request);
-                println!("Backend skipping stale compile result for request {} (current: {})", request_id, current_request);
-                return Ok(());
-            }
-
-            let elapsed = now.elapsed();
-            debug!(
-                "compilation succeeded for {:?} in {:?} ms",
-                project,
-                elapsed.as_millis()
-            );
-            println!("Backend compilation succeeded in {:?} ms request_id: {}", elapsed.as_millis(), request_id);
-
-            let pages = doc.pages.len();
-
-            let mut hasher = SipHasher::new();
-            for page in &doc.pages {
-                page.frame.hash(&mut hasher);
-            }
-            let hash = hex::encode(hasher.finish128().as_bytes());
-
-            let first_page = &doc.pages[0];
-            let width = first_page.frame.width();
-            let height = first_page.frame.height();
-
-            project.cache.write().unwrap().document = Some(doc);
-
-            println!("Backend emitting success event request_id: {}", request_id);
-            let _ = window.emit(
-                "typst_compile",
-                TypstCompileEvent {
-                    document: Some(TypstDocument {
-                        pages,
-                        hash,
-                        width: width.to_pt(),
-                        height: height.to_pt(),
-                    }),
-                    diagnostics: None,
-                },
-            );
-        }
-        Err(diagnostics) => {
-            let current_request = project.current_compile_request_id.load(Ordering::SeqCst);
-            if current_request != request_id {
-                debug!("skipping stale compile error for request {} (current: {})", request_id, current_request);
-                println!("Backend skipping stale compile error for request {} (current: {})", request_id, current_request);
-                return Ok(());
-            }
-
-            debug!(
-                "compilation failed with {:?} diagnostics",
-                diagnostics.len()
-            );
-            println!("Backend compilation failed with {} diagnostics request_id: {}", diagnostics.len(), request_id);
-
-            let source = world.source(source_id);
-            let diagnostics: Vec<TypstSourceDiagnostic> = match source {
-                Ok(source) => diagnostics
-                    .iter()
-                    .filter(|d| d.span.id() == Some(source_id))
-                    .filter_map(|d| {
-                        let span = source.find(d.span)?;
-                        let range = span.range();
-                        let start = content[..range.start].chars().count();
-                        let size = content[range.start..range.end].chars().count();
-
-                        let message = d.message.to_string();
-                        Some(TypstSourceDiagnostic {
-                            range: start..start + size,
-                            severity: match d.severity {
-                                Severity::Error => TypstDiagnosticSeverity::Error,
-                                Severity::Warning => TypstDiagnosticSeverity::Warning,
-                            },
-                            message,
-                            hints: d.hints.iter().map(|hint| hint.to_string()).collect(),
-                        })
-                    })
-                    .collect(),
-                Err(_) => vec![],
-            };
-
-            let _ = window.emit(
-                "typst_compile",
-                TypstCompileEvent {
-                    document: None,
-                    diagnostics: Some(diagnostics),
-                },
-            );
-        }
-    }
-
     Ok(())
 }
 
@@ -225,32 +93,22 @@ pub async fn typst_render<R: Runtime>(
     scale: f32,
     nonce: u32,
 ) -> Result<TypstRenderResponse> {
-    debug!("rendering page {} @{}x", page, scale);
-    println!("Backend rendering page {} @{}x", page, scale);
+    debug!("rendering page {} @{}x", page, scale); // Keep logging but minimal
     let project = project_manager
         .get_project(&window)
         .ok_or(Error::UnknownProject)?;
 
     let cache = project.cache.read().unwrap();
     if let Some(p) = cache.document.as_ref().and_then(|doc| doc.pages.get(page)) {
-        let now = Instant::now();
-        
-        // Use typst_svg::svg instead of render (based on previous context)
-        // Check previously viewed file... yes it was typst_svg::svg(p)
+        // Use typst_svg::svg
         let svg = typst_svg::svg(p);
-        let elapsed = now.elapsed();
-        debug!(
-            "SVG rendering complete for page {} in {} ms",
-            page,
-            elapsed.as_millis()
-        );
-        println!("Backend SVG rendering complete for page {} in {} ms", page, elapsed.as_millis());
         
+        // Calculate dimensions
         let width = (p.frame.width().to_pt() * scale as f64) as u32;
         let height = (p.frame.height().to_pt() * scale as f64) as u32;
         
         return Ok(TypstRenderResponse {
-            image: svg,
+            image: svg, // This is a String (SVG source)
             width,
             height,
             nonce,
@@ -270,7 +128,10 @@ pub async fn typst_autocomplete<R: Runtime>(
     explicit: bool,
 ) -> Result<TypstCompleteResponse> {
     let project = project(&window, &project_manager)?;
-    let world = project.world.lock().unwrap();
+    let world = project.world.lock().unwrap_or_else(|e| {
+        log::warn!("Project world mutex poisoned, recovering: {}", e);
+        e.into_inner()
+    });
 
     let offset = content
         .char_indices()
@@ -295,6 +156,7 @@ pub async fn typst_autocomplete<R: Runtime>(
     })
 }
 
+// ... helper functions for jump ...
 fn find_precise_position(
     frame: &typst::layout::Frame,
     target_span: typst::syntax::Span,
@@ -353,8 +215,6 @@ fn find_precise_jump(
                 }
             }
             FrameItem::Group(group) => {
-                // Invert transform if possible, but for simple jumps we just handle translation
-                // since most Typst groups are just translated.
                 if let Some(res) = find_precise_jump(&group.frame, rel_click) {
                     return Some(res);
                 }
@@ -374,7 +234,10 @@ pub async fn typst_jump<R: Runtime>(
     y: f64,
 ) -> Result<Option<TypstJump>> {
     let project = project(&window, &project_manager)?;
-    let world = project.world.lock().unwrap();
+    let world = project.world.lock().unwrap_or_else(|e| {
+        log::warn!("Project world mutex poisoned, recovering: {}", e);
+        e.into_inner()
+    });
     let cache = project.cache.read().unwrap();
 
     let doc = cache.document.as_ref().ok_or(Error::Unknown)?;
@@ -388,7 +251,7 @@ pub async fn typst_jump<R: Runtime>(
     // Try precise jump first
     let (span, span_offset) = find_precise_jump(&page_doc.frame, point)
         .or_else(|| {
-            // Fallback to standard IDE jump if precise fails
+            // Fallback
             let jump = typst_ide::jump_from_click(&*world, doc, &page_doc.frame, point);
             match jump {
                 Some(typst_ide::Jump::File(id, offset)) => {
@@ -431,7 +294,6 @@ pub async fn typst_jump<R: Runtime>(
     
     let snippet = text[actual_start..actual_end].to_string();
 
-    // Get syntax node info
     let node_kind = typst::syntax::LinkedNode::new(source.root())
         .leaf_at(offset, typst::syntax::Side::Before)
         .map(|n| format!("{:?}", n.kind()));
@@ -464,7 +326,10 @@ pub async fn typst_jump_from_cursor<R: Runtime>(
     byte_offset: usize,
 ) -> Result<Option<TypstDocumentPosition>> {
     let project = project(&window, &project_manager)?;
-    let world = project.world.lock().unwrap();
+    let world = project.world.lock().unwrap_or_else(|e| {
+        log::warn!("Project world mutex poisoned, recovering: {}", e);
+        e.into_inner()
+    });
     let cache = project.cache.read().unwrap();
 
     let doc = cache.document.as_ref().ok_or(Error::Unknown)?;
@@ -482,7 +347,6 @@ pub async fn typst_jump_from_cursor<R: Runtime>(
     let target_span = node.span();
     let target_offset = (byte_offset - node.offset()).min(u16::MAX as usize) as u16;
 
-    // Search for precise position in pages
     let mut result_pos = None;
     for (i, page) in doc.pages.iter().enumerate() {
         if let Some(point) = find_precise_position(&page.frame, target_span, target_offset) {
@@ -490,14 +354,13 @@ pub async fn typst_jump_from_cursor<R: Runtime>(
                 page: i,
                 x: point.x.to_pt(),
                 y: point.y.to_pt(),
-                text: None, // Will fill below
+                text: None,
                 node_kind: Some(format!("{:?}", node.kind())),
             });
             break;
         }
     }
 
-    // Fallback to standard IDE jump if precise search failed
     let result_pos = if let Some(pos) = result_pos {
         Some(pos)
     } else {
@@ -512,7 +375,6 @@ pub async fn typst_jump_from_cursor<R: Runtime>(
     };
 
     if let Some(mut pos) = result_pos {
-        // Get a snippet of text around the offset
         let text = source.text();
         let snippet_start = byte_offset.saturating_sub(50);
         let snippet_end = (byte_offset + 50).min(text.len());

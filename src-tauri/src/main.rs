@@ -3,16 +3,20 @@
     windows_subsystem = "windows"
 )]
 
+mod compiler;
 mod engine;
 mod ipc;
 mod menu;
 mod project;
+
+use crate::compiler::Compiler;
 
 use crate::menu::handle_menu_event;
 use crate::project::ProjectManager;
 use env_logger::Env;
 use log::info;
 use std::sync::Arc;
+use tauri::Manager;
 use tauri::{AboutMetadata, CustomMenuItem, Menu, MenuItem, Submenu, Wry};
 
 #[tokio::main]
@@ -28,7 +32,12 @@ async fn main() {
     tauri::Builder::default()
         .menu(build_menu())
         .on_menu_event(handle_menu_event)
-        .manage(project_manager)
+        .manage(project_manager.clone())
+        .setup(move |app| {
+            let compiler = Arc::new(Compiler::new(project_manager, app.handle()));
+            app.manage(compiler);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             ipc::commands::fs_list_dir,
             ipc::commands::fs_read_file_binary,
