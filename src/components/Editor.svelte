@@ -1,15 +1,14 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import type { editor } from "monaco-editor";
   import debounce from "lodash/debounce";
-
   import { initMonaco } from "../lib/editor/monaco";
   import type { TypstCompileEvent, TypstSourceDiagnostic } from "../lib/ipc";
   import { compile, readFileText, writeFileText, jumpFromCursor } from "../lib/ipc";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   const appWindow = getCurrentWindow();
   import { paste } from "$lib/ipc/clipboard";
-  import { PreviewState, shell } from "$lib/stores";
+  import { PreviewState, shell, pendingScroll } from "$lib/stores";
   import { extractOutlineFromSource } from "$lib/outline";
   import { getEditorToPreviewTarget, scrollEditorToCenterLine } from "$lib/scroll";
 
@@ -25,20 +24,16 @@
   export let path: string;
   export let isVisible: boolean = true;
 
-  import { pendingScroll } from "$lib/stores";
-
-  // Reactive statement to check pending scroll when becoming visible
-  $: if (isVisible) {
+  $: if (isVisible && editorInstance) {
       const pending = $pendingScroll;
       if (pending.source === 'preview' && pending.line) {
-          console.log("[Editor] Found pending scroll from preview, applying to line", pending.line);
           scrollToPosition(pending.line);
-          pendingScroll.set({ source: null });
+          pendingScroll.update(p => ({ ...p, source: null }));
       }
   }
 
   let isTyping = false;
-  let isJumping = false; // Flag to prevent scroll sync loop after jump
+  let isJumping = false;
   let lastCompileRequestId = 0;
   let lastDiagnostics: TypstSourceDiagnostic[] = [];
 
@@ -95,15 +90,12 @@
     const model = editorInstance?.getModel();
     if (model) {
       const filePath = model.uri.path;
-      if (!filePath.endsWith(".typ")) {
-        return;
-      }
+      if (!filePath.endsWith(".typ")) return;
+
       const requestId = shell.nextCompileRequestId();
       lastCompileRequestId = requestId;
-      console.log(`[Frontend] Triggering compile request_id: ${requestId}`);
       shell.setPreviewState(PreviewState.Compiling);
       await compile(model.uri.path, model.getValue(), requestId);
-      console.log(`[Frontend] Sent compile command request_id: ${requestId}`);
     }
   };
 
@@ -124,50 +116,23 @@
         const content = model.getValue();
         const offset = model.getOffsetAt(position);
         
-        // Use Monaco API to get context text around the cursor
-        const startLine = Math.max(1, position.lineNumber - 1);
-        const endLine = Math.min(model.getLineCount(), position.lineNumber + 1);
-        const contextText = model.getValueInRange({
-          startLineNumber: startLine,
-          startColumn: 1,
-          endLineNumber: endLine,
-          endColumn: model.getLineMaxColumn(endLine)
-        });
-
-        // Calculate byte offset for Typst (UTF-8)
         const byteOffset = new TextEncoder().encode(content.substring(0, offset)).length;
 
         try {
           const result = await jumpFromCursor(model.uri.path, content, byteOffset);
-            if (result) {
-              console.log("Jump Target Received (Editor -> Preview):", {
-                source: {
-                  line: position.lineNumber,
-                  column: position.column,
-                  offset: offset,
-                  byteOffset: byteOffset,
-                  context: contextText.trim(),
-                  kind: result.node_kind
-                },
-                target: {
-                  page: result.page + 1,
-                  x: Math.round(result.x),
-                  y: Math.round(result.y)
-                }
-              });
-              
-              if ($shell.viewMode === "both" || isVisible) {
-                 appWindow.emit("scroll_to_position_in_preview", result);
-              }
-              
-              // If preview is hidden (we are in editor mode), store request
-              if ($shell.viewMode === "editor") {
-                  pendingScroll.set({
-                      source: 'editor',
-                      preview: result
-                  });
-              }
+          if (result) {
+            if ($shell.viewMode === "both" || isVisible) {
+              appWindow.emit("scroll_to_position_in_preview", result);
             }
+            
+            if ($shell.viewMode === "editor") {
+              pendingScroll.update(p => ({
+                ...p,
+                source: 'editor',
+                preview: result
+              }));
+            }
+          }
         } catch (e) {
           console.error("Failed to jump from cursor:", e);
         }
@@ -177,16 +142,7 @@
 
   export const scrollToPosition = (line: number, column: number = 1) => {
     if (editorInstance) {
-      console.log("[Editor] Revealing line at center (JUMP):", line, column);
-      
-      // Set jump flag to block outgoing sync
       isJumping = true;
-      // Cancel any pending sync based on previous scrolls
-      // We rely on closure access to the debounced function from onMount? 
-      // BEWARE: syncPreviewFromScrollDebounced is defined in onMount scope, not here!
-      // modification: We need to move the debounced function to component scope or access it via a ref.
-      // Or just rely on isJumping check inside the sync function.
-      
       scrollEditorToCenterLine(editorInstance, line, column);
       editorInstance.focus();
 
@@ -220,10 +176,11 @@
        
        if (target) {
           if ($shell.viewMode === "editor") {
-              pendingScroll.set({
+              pendingScroll.update(p => ({
+                  ...p,
                   source: 'editor',
                   preview: target
-              });
+              }));
           } else if ($shell.viewMode === "both") {
              appWindow.emit("scroll_to_position_in_preview", { ...target, flash: false });
           }
@@ -263,12 +220,12 @@
         },
       });
 
-      editorInstance.onDidChangeModel((e: IModelChangedEvent) => {
+      editorInstance.onDidChangeModel(() => {
         handleCompile();
         updateOutline();
       });
 
-      editorInstance.onDidChangeModelContent((e: IModelContentChangedEvent) => {
+      editorInstance.onDidChangeModelContent(() => {
         clearMarkersWhileTyping();
         markTypingDone();
         handleCompile();
@@ -282,31 +239,19 @@
 
       editorInstance.onDidChangeCursorPosition(() => {
         const pos = getCursorPosition();
-        if (pos) {
-          appWindow.emit("editor_cursor_changed", pos);
-        }
+        if (pos) appWindow.emit("editor_cursor_changed", pos);
       });
 
       editorInstance.onDidScrollChange((e) => {
-        if (e.scrollTopChanged) {
-           syncPreviewFromScrollDebounced();
-        }
+        if (e.scrollTopChanged) syncPreviewFromScrollDebounced();
       });
 
       const unsubscribeCompile = await appWindow.listen<TypstCompileEvent>("typst_compile", ({ payload }) => {
-        console.log("[Frontend] Received typst_compile event");
         const { document, diagnostics } = payload;
-        
         lastDiagnostics = diagnostics || [];
         
-        if (!isTyping) {
-          applyMarkers(lastDiagnostics);
-        }
-        if (document) {
-          shell.setPreviewState(PreviewState.Idle);
-        } else {
-          shell.setPreviewState(PreviewState.CompileError);
-        }
+        if (!isTyping) applyMarkers(lastDiagnostics);
+        shell.setPreviewState(document ? PreviewState.Idle : PreviewState.CompileError);
       });
       cleanup.push(unsubscribeCompile);
 
@@ -314,19 +259,14 @@
         scrollToPosition(payload.line, payload.column || 1);
       });
       cleanup.push(unsubscribeJumpTo);
-      const unsubscribeTriggerCompile = await appWindow.listen("trigger_compile", () => {
-        handleCompile();
-      });
+      
+      const unsubscribeTriggerCompile = await appWindow.listen("trigger_compile", () => handleCompile());
       cleanup.push(unsubscribeTriggerCompile);
 
-      const unsubscribeSave = await appWindow.listen("menu_save", () => {
-        handleSave();
-      });
+      const unsubscribeSave = await appWindow.listen("menu_save", () => handleSave());
       cleanup.push(unsubscribeSave);
 
-      const unsubscribeSaveAll = await appWindow.listen("menu_save_all", () => {
-        handleSave(); // For now just save current
-      });
+      const unsubscribeSaveAll = await appWindow.listen("menu_save_all", () => handleSave());
       cleanup.push(unsubscribeSaveAll);
 
       const unsubscribeReplaceRange = await appWindow.listen<{ startLine: number; endLine: number; text: string }>("replace_range", ({ payload }) => {
@@ -339,11 +279,7 @@
               endLineNumber: payload.endLine,
               endColumn: model.getLineMaxColumn(payload.endLine)
             };
-            model.pushEditOperations(
-              [],
-              [{ range: range, text: payload.text }],
-              () => null
-            );
+            model.pushEditOperations([], [{ range: range, text: payload.text }], () => null);
           }
         }
       });
@@ -359,11 +295,7 @@
               endLineNumber: payload.endLine,
               endColumn: model.getLineMaxColumn(payload.endLine)
             };
-            model.pushEditOperations(
-              [],
-              [{ range: range, text: "" }],
-              () => null
-            );
+            model.pushEditOperations([], [{ range: range, text: "" }], () => null);
           }
         }
       });
@@ -380,22 +312,13 @@
               endColumn: model.getLineMaxColumn(payload.endLine)
             };
             const content = model.getValueInRange(range);
-            
-            // 1. Write the new file
-            // We need to resolve the path. Assume it's in the same directory as the current file.
             const currentPath = model.uri.path;
             const parentDir = currentPath.substring(0, currentPath.lastIndexOf("/") + 1);
             const newFilePath = parentDir + payload.filename;
             
             try {
               await writeFileText(newFilePath, content);
-              
-              // 2. Replace the range with #include
-              model.pushEditOperations(
-                [],
-                [{ range: range, text: `#include "${payload.filename}"` }],
-                () => null
-              );
+              model.pushEditOperations([], [{ range: range, text: `#include "${payload.filename}"` }], () => null);
             } catch (err) {
               console.error("Failed to extract section:", err);
             }
@@ -414,24 +337,20 @@
 
   const fetchContent = async (editor: ICodeEditor, editorPath: string) => {
     if (!editor) return;
-
     editor.updateOptions({ readOnly: true });
     handleSaveDebounce.flush();
-
     editor.getModel()?.dispose();
 
     try {
       const content = await readFileText(editorPath);
       const monaco = await monacoImport;
       const uri = monaco.Uri.file(editorPath);
-
       let model = monaco.editor.getModel(uri);
       if (model) {
         model.setValue(content);
       } else {
         model = monaco.editor.createModel(content, undefined, uri);
       }
-
       editor.setModel(model);
       updateOutline();
     } finally {
@@ -444,20 +363,13 @@
     if (text === "") {
       event.preventDefault();
       const res = await paste();
-
       const range = editorInstance.getSelection();
       const model = editorInstance.getModel();
       if (range && model) {
-        model.pushEditOperations(
-          [],
-          [
-            {
-              range: range,
-              text: `\n#figure(\n  image("${res.path}"),\n  caption: []\n)\n`,
-            },
-          ],
-          () => null
-        );
+        model.pushEditOperations([], [{
+          range: range,
+          text: `\n#figure(\n  image("${res.path}"),\n  caption: []\n)\n`,
+        }], () => null);
       }
     }
   };

@@ -15,7 +15,7 @@ use typst_ide::{Completion, CompletionKind};
 #[derive(Serialize, Debug)]
 pub struct TypstJump {
     filepath: String,
-    start: Option<(usize, usize)>, // line, column
+    start: Option<(usize, usize)>,
     end: Option<(usize, usize)>,
     text: Option<String>,
     offset: Option<usize>,
@@ -66,7 +66,6 @@ impl From<Completion> for TypstCompletion {
     }
 }
 
-// REFACTORED COMMAND
 #[tauri::command]
 pub async fn typst_compile<R: Runtime>(
     window: tauri::WebviewWindow<R>,
@@ -93,22 +92,19 @@ pub async fn typst_render<R: Runtime>(
     scale: f32,
     nonce: u32,
 ) -> Result<TypstRenderResponse> {
-    debug!("rendering page {} @{}x", page, scale); // Keep logging but minimal
     let project = project_manager
         .get_project(&window)
         .ok_or(Error::UnknownProject)?;
 
     let cache = project.cache.read().unwrap();
     if let Some(p) = cache.document.as_ref().and_then(|doc| doc.pages.get(page)) {
-        // Use typst_svg::svg
         let svg = typst_svg::svg(p);
         
-        // Calculate dimensions
         let width = (p.frame.width().to_pt() * scale as f64) as u32;
         let height = (p.frame.height().to_pt() * scale as f64) as u32;
         
         return Ok(TypstRenderResponse {
-            image: svg, // This is a String (SVG source)
+            image: svg,
             width,
             height,
             nonce,
@@ -156,7 +152,6 @@ pub async fn typst_autocomplete<R: Runtime>(
     })
 }
 
-// ... helper functions for jump ...
 fn find_precise_position(
     frame: &typst::layout::Frame,
     target_span: typst::syntax::Span,
@@ -201,8 +196,6 @@ fn find_precise_jump(
         match item {
             FrameItem::Text(text) => {
                 let height = text.size;
-                // Rough bounding box check for text line
-                // Typst y is baseline, so we check around the baseline
                 if rel_click.y >= -height && rel_click.y <= height * 0.5 {
                     let mut current_x = typst::layout::Abs::zero();
                     for glyph in &text.glyphs {
@@ -248,10 +241,8 @@ pub async fn typst_jump<R: Runtime>(
         typst::layout::Abs::pt(y)
     );
 
-    // Try precise jump first
     let (span, span_offset) = match find_precise_jump(&page_doc.frame, point)
         .or_else(|| {
-            // Fallback
             let jump = typst_ide::jump_from_click(&*world, doc, &page_doc.frame, point);
             match jump {
                 Some(typst_ide::Jump::File(id, offset)) => {
@@ -281,7 +272,6 @@ pub async fn typst_jump<R: Runtime>(
     let path = source.id().vpath().as_rootless_path().to_string_lossy().to_string();
     let filepath = if path.starts_with("/") { path } else { format!("/{}", path) };
 
-    // Get a snippet of text around the offset
     let text = source.text();
     let snippet_start = offset.saturating_sub(50);
     let snippet_end = (offset + 50).min(text.len());
@@ -505,7 +495,6 @@ pub async fn typst_delete_package(
         let _ = std::fs::remove_dir(&namespace_path);
     }
 
-    debug!("Deleted package @{}/{}:{}", namespace, name, version);
     Ok(())
 }
 
@@ -524,13 +513,11 @@ pub async fn typst_install_package(spec: String) -> Result<()> {
             .output();
         
         if output.is_err() {
-            debug!("typst CLI not found, cannot install packages");
             return Err(Error::Unknown);
         }
         return Err(Error::Unknown);
     }
 
-    debug!("Installed package {}", spec);
     Ok(())
 }
 
@@ -556,7 +543,6 @@ pub async fn export_pdf<R: Runtime>(
     }
     
     std::fs::write(&path_buf, pdf).map_err(Into::<Error>::into)?;
-    debug!("Exported PDF to {:?}", path_buf);
     
     Ok(())
 }
@@ -595,7 +581,6 @@ pub async fn export_svg<R: Runtime>(
 
     zip.finish().map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
     
-    debug!("Exported SVG zip to {:?}", path_buf);
     Ok(())
 }
 
@@ -630,13 +615,6 @@ pub async fn export_png<R: Runtime>(
         let filename = format!("page_{:02}.png", i + 1);
         zip.start_file(filename, options).map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
         
-        // Encoding directly
-        // create a temporary encoder to write to buffer? 
-        // pixmap.save_png is convenient but writes to path.
-        // We can encode using the png crate or just use an intermediate buffer if pixmap exposes raw bytes.
-        // pixmap.encode_png() returns Result<Vec<u8>> in recent versions? 
-        // checking typst_render usage... it returns a Pixmap.
-        // Pixmap has encode_png().
         if let Ok(data) = pixmap.encode_png() {
              use std::io::Write;
              zip.write_all(&data).map_err(Into::<Error>::into)?;
@@ -647,7 +625,6 @@ pub async fn export_png<R: Runtime>(
     
     zip.finish().map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
     
-    debug!("Exported PNG zip to {:?}", path_buf);
     Ok(())
 }
 
@@ -673,15 +650,12 @@ pub async fn update_menu_state<R: Runtime>(
         path: p.path,
     }).collect();
     
-    log::info!("Updating menu state: is_project_open={}, recent_projects_count={}", is_project_open, recent_projects.len());
-    
     match build_menu(window.app_handle(), &recent_projects, is_project_open) {
         Ok(menu) => {
             if let Err(e) = window.app_handle().set_menu(menu) {
                 log::error!("Failed to set app menu: {}", e);
                 return Err(Error::Unknown);
             }
-            log::info!("Menu updated successfully");
         }
         Err(e) => {
             log::error!("Failed to build menu: {}", e);
