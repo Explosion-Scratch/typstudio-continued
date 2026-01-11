@@ -232,4 +232,12 @@ const createRecentProjects = () => {
   };
 };
 
+
 export const recentProjects = createRecentProjects();
+
+export const pendingScroll = writable<{
+  source: 'editor' | 'preview' | null;
+  line?: number;
+  preview?: { page: number, x: number, y: number };
+}>({ source: null });
+

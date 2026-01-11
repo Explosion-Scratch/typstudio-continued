@@ -2,7 +2,36 @@
   import PreviewPage from "./PreviewPage.svelte";
   import CompileErrorDisplay from "./CompileErrorDisplay.svelte";
   import ZoomControls from "./ZoomControls.svelte";
-  import { onMount } from "svelte";
+  import { calculatePreviewScrollCenter, getPreviewToEditorTargetLine } from "$lib/scroll";
+  import { onMount, tick } from "svelte";
+
+  // ... (rest of imports)
+
+  // ... (inside component)
+  
+  // Reactive statement to apply pending scroll immediately when visible and we have pages
+  $: if (isVisible && container && pages > 0) {
+      (async () => {
+          const pending = $pendingScroll;
+          if (pending.source === 'editor' && pending.preview) {
+               console.log("[Preview] Found pending scroll from editor, waiting for DOM...", pending.preview);
+               await tick(); // Wait for DOM to update with new pages
+               // Double check just in case
+               if (container && container.querySelector(`.preview-page[data-page="${pending.preview.page}"]`)) {
+                   console.log("[Preview] Applying pending scroll...");
+                   scrollToPreviewPosition({ ...pending.preview, flash: false });
+                   pendingScroll.set({ source: null });
+               } else {
+                   console.warn("[Preview] DOM still not ready after tick, retrying next frame?");
+                   // Optional: reckless retry or just leave it. 
+                   // Usually tick() is enough.
+                   // Let's try one more tick or just trust it.
+                   // Actually, if images/content need to load, the element wrapper should still be there.
+                   // The element is just <PreviewPage ... />
+               }
+          }
+      })();
+  }
 
   import type { TypstCompileEvent, TypstSourceDiagnostic } from "../lib/ipc";
   import { jump } from "../lib/ipc";
@@ -21,6 +50,9 @@
   let zoom = 1.0;
   let minZoom = 0.25;
   let maxZoom = 4.0;
+
+  import { debounce } from "lodash";
+  import { pendingScroll } from "$lib/stores";
 
   const CLICK_THRESHOLD_DISTANCE = 5;
   const CLICK_THRESHOLD_TIME = 200;
@@ -118,6 +150,25 @@
     }
   };
 
+  // ... imports moved to top
+  
+  const handleScroll = debounce(async (event: Event) => {
+      // Only sync if we are the active single pane (or willing to sync in background)
+      if ($shell.viewMode === "preview") {
+          const target = event.target as HTMLElement;
+          if (!target || !pagesContainer) return;
+
+          const avgLine = await getPreviewToEditorTargetLine(container, pagesContainer, effectiveScale);
+          
+          if (avgLine !== null) {
+              pendingScroll.set({
+                  source: 'preview',
+                  line: avgLine
+              });
+          }
+      }
+  }, 200);
+
   const handleKeyDown = (event: KeyboardEvent) => {
     if (event.metaKey || event.ctrlKey) {
       switch (event.key) {
@@ -152,6 +203,61 @@
 
   const handleErrorClick = (error: TypstSourceDiagnostic) => {
     appWindow.emit("scroll_to_position", { position: error.range.start });
+  };
+
+  const scrollToPreviewPosition = (payload: { page: number; x: number; y: number; flash?: boolean }) => {
+    if (!container) {
+        console.warn("[Preview] Container not ready for scroll");
+        return;
+    }
+    if (!pagesContainer) return;
+
+    const pageElement = container.querySelector(`.preview-page[data-page="${payload.page}"]`) as HTMLElement;
+    if (pageElement) {
+      console.log("[Preview] Scrolling to position (Center):", payload);
+      
+      const target = calculatePreviewScrollCenter(container, pageElement, payload, effectiveScale);
+      
+      if (target) {
+          container.scrollTo({ top: target.top, left: target.left, behavior: "smooth" });
+          
+          if (payload.flash !== false) {
+             const pageRect = pageElement.getBoundingClientRect();
+             const pagesRect = pagesContainer.getBoundingClientRect(); // this might need re-querying if scrolling changed layout? No, relative.
+             
+             // Wait, calculatePreviewScrollTop returns target scroll.
+             // We need to calculate flash position relative to documents.
+             // Flash is relative to pagesContainer.
+             
+             const pixelX = payload.x * effectiveScale;
+             const pixelY = payload.y * effectiveScale;
+             
+             // pageRect is in viewport coords, which changes after scroll.
+             // But we want flash position relative to pages wrapper, which is stable relative to pages.
+             
+             // pagesContainer usually wraps all pages.
+             // FlashMarker is put inside pages-wrapper ?? No, it is a sibling of pages inside pages-wrapper?
+             // Yes, pages-wrapper contains pages and flash marker.
+             
+             // We need to find the offset of the page relative to pages-wrapper.
+             // We can do this by subtracting rects?
+             
+             // Wait, we need the CURRENT rects? If we just initiated scroll, the rects are old.
+             // But we just need the relative offset between page and pagesContainer. That shouldn't change with scroll?
+             // Yes, (pageRect.top - pagesRect.top) is constant regardless of scroll.
+             
+             const relativePageTop = pageRect.top - pagesRect.top;
+             const relativePageLeft = pageRect.left - pagesRect.left;
+             
+             flashMarker = {
+                 x: relativePageLeft + pixelX,
+                 y: relativePageTop + pixelY,
+             };
+          }
+      }
+    } else {
+        console.warn(`[Preview] Page element ${payload.page} not found`);
+    }
   };
 
   onMount(() => {
@@ -190,32 +296,7 @@
       const unsubscribeScrollToPos = await appWindow.listen<{ page: number; x: number; y: number; flash?: boolean }>(
         "scroll_to_position_in_preview",
         ({ payload }) => {
-          if (!container) return;
-          const pageElement = container.querySelector(`.preview-page[data-page="${payload.page}"]`);
-          if (pageElement) {
-            const pageRect = pageElement.getBoundingClientRect();
-            const containerRect = container.getBoundingClientRect();
-
-            const pixelX = payload.x * effectiveScale;
-            const pixelY = payload.y * effectiveScale;
-
-            const absolutePageTop = pageRect.top - containerRect.top + container.scrollTop;
-            const absolutePageLeft = pageRect.left - containerRect.left + container.scrollLeft;
-
-            const targetTop = absolutePageTop + pixelY - container.clientHeight / 2;
-            const targetLeft = absolutePageLeft + pixelX - container.clientWidth / 2;
-
-            container.scrollTo({ top: targetTop, left: targetLeft, behavior: "smooth" });
-
-            if (pagesContainer && payload.flash !== false) {
-              const pagesRect = pagesContainer.getBoundingClientRect();
-              
-              flashMarker = {
-                x: pageRect.left - pagesRect.left + pixelX,
-                y: pageRect.top - pagesRect.top + pixelY,
-              };
-            }
-          }
+            scrollToPreviewPosition(payload);
         }
       );
       cleanup.push(unsubscribeScrollToPos);
@@ -235,8 +316,22 @@
       cleanup.forEach((fn) => fn());
       window.removeEventListener("keydown", handleKeyDown);
       resizeObserver.disconnect();
+      handleScroll.cancel();
     };
   });
+  
+  // Reactive statement to apply pending scroll immediately when visible and we have pages
+  $: if (isVisible && container && pages > 0) {
+      (async () => {
+          const pending = $pendingScroll;
+          if (pending.source === 'editor' && pending.preview) {
+               console.log("[Preview] Found pending scroll from editor, waiting for DOM...", pending.preview);
+               await tick();
+               scrollToPreviewPosition({ ...pending.preview, flash: false });
+               pendingScroll.set({ source: null });
+          }
+      })();
+  }
 </script>
 
 {#if isVisible}
@@ -250,6 +345,7 @@
       on:mouseup={handleMouseUp}
       on:mouseleave={handleMouseUp}
       on:wheel={handleWheel}
+      on:scroll={handleScroll}
       class="preview-container"
       class:dragging={isDragging}
       role="region"

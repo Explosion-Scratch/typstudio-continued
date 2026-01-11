@@ -555,7 +555,7 @@
                   ? "flex: 1"
                   : ""}
             >
-              <Editor class="editor-pane" path={$shell.selectedFile} />
+              <Editor class="editor-pane" path={$shell.selectedFile} isVisible={showEditor} />
             </div>
             {#if isTypstFile}
               {#if $shell.viewMode === "both"}

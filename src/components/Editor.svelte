@@ -11,6 +11,7 @@
   import { paste } from "$lib/ipc/clipboard";
   import { PreviewState, shell } from "$lib/stores";
   import { extractOutlineFromSource } from "$lib/outline";
+  import { getEditorToPreviewTarget, scrollEditorToCenterLine } from "$lib/scroll";
 
   type ICodeEditor = editor.ICodeEditor;
   type IModelContentChangedEvent = editor.IModelContentChangedEvent;
@@ -22,8 +23,22 @@
   const monacoImport = import("monaco-editor");
 
   export let path: string;
+  export let isVisible: boolean = true;
+
+  import { pendingScroll } from "$lib/stores";
+
+  // Reactive statement to check pending scroll when becoming visible
+  $: if (isVisible) {
+      const pending = $pendingScroll;
+      if (pending.source === 'preview' && pending.line) {
+          console.log("[Editor] Found pending scroll from preview, applying to line", pending.line);
+          scrollToPosition(pending.line);
+          pendingScroll.set({ source: null });
+      }
+  }
 
   let isTyping = false;
+  let isJumping = false; // Flag to prevent scroll sync loop after jump
   let lastCompileRequestId = 0;
   let lastDiagnostics: TypstSourceDiagnostic[] = [];
 
@@ -124,24 +139,35 @@
 
         try {
           const result = await jumpFromCursor(model.uri.path, content, byteOffset);
-          if (result) {
-            console.log("Jump Target Received (Editor -> Preview):", {
-              source: {
-                line: position.lineNumber,
-                column: position.column,
-                offset: offset,
-                byteOffset: byteOffset,
-                context: contextText.trim(),
-                kind: result.node_kind
-              },
-              target: {
-                page: result.page + 1,
-                x: Math.round(result.x),
-                y: Math.round(result.y)
+            if (result) {
+              console.log("Jump Target Received (Editor -> Preview):", {
+                source: {
+                  line: position.lineNumber,
+                  column: position.column,
+                  offset: offset,
+                  byteOffset: byteOffset,
+                  context: contextText.trim(),
+                  kind: result.node_kind
+                },
+                target: {
+                  page: result.page + 1,
+                  x: Math.round(result.x),
+                  y: Math.round(result.y)
+                }
+              });
+              
+              if ($shell.viewMode === "both" || isVisible) {
+                 appWindow.emit("scroll_to_position_in_preview", result);
               }
-            });
-            appWindow.emit("scroll_to_position_in_preview", result);
-          }
+              
+              // If preview is hidden (we are in editor mode), store request
+              if ($shell.viewMode === "editor") {
+                  pendingScroll.set({
+                      source: 'editor',
+                      preview: result
+                  });
+              }
+            }
         } catch (e) {
           console.error("Failed to jump from cursor:", e);
         }
@@ -151,9 +177,22 @@
 
   export const scrollToPosition = (line: number, column: number = 1) => {
     if (editorInstance) {
-      editorInstance.revealLineInCenter(line);
-      editorInstance.setPosition({ lineNumber: line, column });
+      console.log("[Editor] Revealing line at center (JUMP):", line, column);
+      
+      // Set jump flag to block outgoing sync
+      isJumping = true;
+      // Cancel any pending sync based on previous scrolls
+      // We rely on closure access to the debounced function from onMount? 
+      // BEWARE: syncPreviewFromScrollDebounced is defined in onMount scope, not here!
+      // modification: We need to move the debounced function to component scope or access it via a ref.
+      // Or just rely on isJumping check inside the sync function.
+      
+      scrollEditorToCenterLine(editorInstance, line, column);
       editorInstance.focus();
+
+      setTimeout(() => {
+        isJumping = false;
+      }, 1000);
     }
   };
 
@@ -174,40 +213,24 @@
 
   onMount(() => {
     let cleanup: (() => void)[] = [];
-    let lastSyncScrollTop = 0;
-    
     const syncPreviewFromScroll = async () => {
-       if (!editorInstance) return;
-       const scrollTop = editorInstance.getScrollTop();
-       const delta = Math.abs(scrollTop - lastSyncScrollTop);
+       if (!editorInstance || isJumping) return;
        
-       if (delta > 200) {
-           const model = editorInstance.getModel();
-           if (!model) return;
-           
-           const ranges = editorInstance.getVisibleRanges();
-           if (ranges.length === 0) return;
-           
-           const centerLine = Math.floor((ranges[0].startLineNumber + ranges[0].endLineNumber) / 2);
-           
-           const pos = { lineNumber: centerLine, column: 1 };
-           const offset = model.getOffsetAt(pos);
-           const content = model.getValue();
-           const byteOffset = new TextEncoder().encode(content.substring(0, offset)).length;
-           
-           try {
-              const result = await jumpFromCursor(model.uri.path, content, byteOffset);
-              if (result) {
-                appWindow.emit("scroll_to_position_in_preview", { ...result, flash: false });
-                lastSyncScrollTop = scrollTop;
-              }
-           } catch (err) {
-              console.error("Failed to sync preview from scroll:", err);
-           }
+       const target = await getEditorToPreviewTarget(editorInstance);
+       
+       if (target) {
+          if ($shell.viewMode === "editor") {
+              pendingScroll.set({
+                  source: 'editor',
+                  preview: target
+              });
+          } else if ($shell.viewMode === "both") {
+             appWindow.emit("scroll_to_position_in_preview", { ...target, flash: false });
+          }
        }
     };
     
-    const syncPreviewFromScrollDebounced = debounce(syncPreviewFromScroll, 500);
+    const syncPreviewFromScrollDebounced = debounce(syncPreviewFromScroll, 10);
 
     (async () => {
       const EditorWorker = await import("monaco-editor/esm/vs/editor/editor.worker?worker");

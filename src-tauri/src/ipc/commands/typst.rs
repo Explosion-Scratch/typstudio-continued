@@ -249,7 +249,7 @@ pub async fn typst_jump<R: Runtime>(
     );
 
     // Try precise jump first
-    let (span, span_offset) = find_precise_jump(&page_doc.frame, point)
+    let (span, span_offset) = match find_precise_jump(&page_doc.frame, point)
         .or_else(|| {
             // Fallback
             let jump = typst_ide::jump_from_click(&*world, doc, &page_doc.frame, point);
@@ -263,7 +263,10 @@ pub async fn typst_jump<R: Runtime>(
                 _ => None,
             }
         })
-        .ok_or(Error::Unknown)?;
+    {
+        Some(res) => res,
+        None => return Ok(None),
+    };
 
     let source_id = span.id().ok_or(Error::Unknown)?;
     let source = world.source(source_id).map_err(Into::<Error>::into)?;
