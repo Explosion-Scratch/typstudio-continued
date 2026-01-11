@@ -4,7 +4,7 @@
   import debounce from "lodash/debounce";
 
   import { initMonaco } from "../lib/editor/monaco";
-  import type { TypstCompileEvent } from "../lib/ipc";
+  import type { TypstCompileEvent, TypstSourceDiagnostic } from "../lib/ipc";
   import { compile, readFileText, writeFileText, jumpFromCursor } from "../lib/ipc";
   import { appWindow } from "@tauri-apps/api/window";
   import { paste } from "$lib/ipc/clipboard";
@@ -24,6 +24,28 @@
 
   let isTyping = false;
   let lastCompileRequestId = 0;
+  let lastDiagnostics: TypstSourceDiagnostic[] = [];
+
+  const applyMarkers = (diagnostics: TypstSourceDiagnostic[]) => {
+    const model = editorInstance?.getModel();
+    if (model) {
+      import("monaco-editor").then((m) => {
+        const markers: IMarkerData[] = diagnostics.map(({ range, severity, message, hints }) => {
+          const start = model.getPositionAt(range.start);
+          const end = model.getPositionAt(range.end);
+          return {
+            startLineNumber: start.lineNumber,
+            startColumn: start.column,
+            endLineNumber: end.lineNumber,
+            endColumn: end.column,
+            message: message + "\n" + hints.map((hint: string) => `hint: ${hint}`).join("\n"),
+            severity: severity === "error" ? m.MarkerSeverity.Error : m.MarkerSeverity.Warning,
+          };
+        });
+        m.editor.setModelMarkers(model, "owner", markers);
+      });
+    }
+  };
 
   const updateOutline = () => {
     const model = editorInstance?.getModel();
@@ -50,6 +72,7 @@
 
   const markTypingDone = debounce(() => {
     isTyping = false;
+    applyMarkers(lastDiagnostics);
   }, 300);
 
   const handleCompile = async () => {
@@ -61,8 +84,10 @@
       }
       const requestId = shell.nextCompileRequestId();
       lastCompileRequestId = requestId;
+      console.log(`[Frontend] Triggering compile request_id: ${requestId}`);
       shell.setPreviewState(PreviewState.Compiling);
       await compile(model.uri.path, model.getValue(), requestId);
+      console.log(`[Frontend] Sent compile command request_id: ${requestId}`);
     }
   };
 
@@ -219,10 +244,12 @@
         updateOutline();
       });
 
+  const handleCompileDebounced = debounce(handleCompile, 300);
+
       editorInstance.onDidChangeModelContent((e: IModelContentChangedEvent) => {
         clearMarkersWhileTyping();
         markTypingDone();
-        handleCompile();
+        handleCompileDebounced();
         handleSaveDebounce();
         updateOutlineDebounced();
       });
@@ -242,24 +269,13 @@
       });
 
       const unsubscribeCompile = await appWindow.listen<TypstCompileEvent>("typst_compile", ({ payload }) => {
+        console.log("[Frontend] Received typst_compile event");
         const { document, diagnostics } = payload;
-        const model = editorInstance.getModel();
-        if (model && diagnostics && !isTyping) {
-          import("monaco-editor").then((m) => {
-            const markers: IMarkerData[] = diagnostics.map(({ range, severity, message, hints }) => {
-              const start = model.getPositionAt(range.start);
-              const end = model.getPositionAt(range.end);
-              return {
-                startLineNumber: start.lineNumber,
-                startColumn: start.column,
-                endLineNumber: end.lineNumber,
-                endColumn: end.column,
-                message: message + "\n" + hints.map((hint) => `hint: ${hint}`).join("\n"),
-                severity: severity === "error" ? m.MarkerSeverity.Error : m.MarkerSeverity.Warning,
-              };
-            });
-            m.editor.setModelMarkers(model, "owner", markers);
-          });
+        
+        lastDiagnostics = diagnostics || [];
+        
+        if (!isTyping) {
+          applyMarkers(lastDiagnostics);
         }
         if (document) {
           shell.setPreviewState(PreviewState.Idle);

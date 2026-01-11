@@ -47,10 +47,9 @@
   $: invalidateCanRender(hash, scale);
   $: if (canRender) update(hash, scale);
 </script>
-
 <div
   class="preview-page"
-  style="height: {height}px; min-height: {height}px; width: {width}px; min-width: {width}px;"
+  style="height: {height}px; min-height: {height}px; width: {width}px; min-width: {width}px; --height: {height}px;"
   bind:this={container}
   data-page={page}
 ></div>
@@ -63,6 +62,8 @@
     margin: 0 auto;
     box-sizing: border-box;
     overflow: hidden;
+    content-visibility: auto;
+    contain-intrinsic-size: auto var(--height);
   }
 
   .preview-page :global(svg) {

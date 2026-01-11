@@ -82,10 +82,23 @@ pub async fn typst_compile<R: Runtime>(
     request_id: u64,
 ) -> Result<()> {
     let project = project(&window, &project_manager)?;
+    
+    println!("Backend handling compile request_id: {}", request_id);
 
     project.current_compile_request_id.store(request_id, Ordering::SeqCst);
 
+    println!("Backend waiting for lock request_id: {}", request_id);
     let mut world = project.world.lock().unwrap();
+    println!("Backend acquired lock request_id: {}", request_id);
+
+    // Check if a newer request has come in while we were waiting for the lock
+    let current_request = project.current_compile_request_id.load(Ordering::SeqCst);
+    if current_request != request_id {
+        println!("Backend aborting stale compile request {} (current: {})", request_id, current_request);
+        debug!("aborting stale compile request {} (current: {})", request_id, current_request);
+        return Ok(());
+    }
+
     let source_id = world
         .slot_update(&path, Some(content.clone()))
         .map_err(Into::<Error>::into)?;
@@ -97,18 +110,21 @@ pub async fn typst_compile<R: Runtime>(
         let config = project.config.read().unwrap();
         if config.apply_main(&project, &mut world).is_err() {
             debug!("skipped compilation for {:?} (main not set)", project);
+            println!("Backend skipped compilation (main not set) request_id: {}", request_id);
             return Ok(());
         }
     }
 
     debug!("compiling {:?}: {:?} (request_id: {})", path, project, request_id);
     let now = Instant::now();
+    println!("Backend calling typst::compile request_id: {}", request_id);
     let result = typst::compile::<typst::layout::PagedDocument>(&*world);
     match result.output {
         Ok(doc) => {
             let current_request = project.current_compile_request_id.load(Ordering::SeqCst);
             if current_request != request_id {
                 debug!("skipping stale compile result for request {} (current: {})", request_id, current_request);
+                println!("Backend skipping stale compile result for request {} (current: {})", request_id, current_request);
                 return Ok(());
             }
 
@@ -118,6 +134,7 @@ pub async fn typst_compile<R: Runtime>(
                 project,
                 elapsed.as_millis()
             );
+            println!("Backend compilation succeeded in {:?} ms request_id: {}", elapsed.as_millis(), request_id);
 
             let pages = doc.pages.len();
 
@@ -133,6 +150,7 @@ pub async fn typst_compile<R: Runtime>(
 
             project.cache.write().unwrap().document = Some(doc);
 
+            println!("Backend emitting success event request_id: {}", request_id);
             let _ = window.emit(
                 "typst_compile",
                 TypstCompileEvent {
@@ -150,6 +168,7 @@ pub async fn typst_compile<R: Runtime>(
             let current_request = project.current_compile_request_id.load(Ordering::SeqCst);
             if current_request != request_id {
                 debug!("skipping stale compile error for request {} (current: {})", request_id, current_request);
+                println!("Backend skipping stale compile error for request {} (current: {})", request_id, current_request);
                 return Ok(());
             }
 
@@ -157,6 +176,7 @@ pub async fn typst_compile<R: Runtime>(
                 "compilation failed with {:?} diagnostics",
                 diagnostics.len()
             );
+            println!("Backend compilation failed with {} diagnostics request_id: {}", diagnostics.len(), request_id);
 
             let source = world.source(source_id);
             let diagnostics: Vec<TypstSourceDiagnostic> = match source {
@@ -206,6 +226,7 @@ pub async fn typst_render<R: Runtime>(
     nonce: u32,
 ) -> Result<TypstRenderResponse> {
     debug!("rendering page {} @{}x", page, scale);
+    println!("Backend rendering page {} @{}x", page, scale);
     let project = project_manager
         .get_project(&window)
         .ok_or(Error::UnknownProject)?;
@@ -214,6 +235,8 @@ pub async fn typst_render<R: Runtime>(
     if let Some(p) = cache.document.as_ref().and_then(|doc| doc.pages.get(page)) {
         let now = Instant::now();
         
+        // Use typst_svg::svg instead of render (based on previous context)
+        // Check previously viewed file... yes it was typst_svg::svg(p)
         let svg = typst_svg::svg(p);
         let elapsed = now.elapsed();
         debug!(
@@ -221,6 +244,7 @@ pub async fn typst_render<R: Runtime>(
             page,
             elapsed.as_millis()
         );
+        println!("Backend SVG rendering complete for page {} in {} ms", page, elapsed.as_millis());
         
         let width = (p.frame.width().to_pt() * scale as f64) as u32;
         let height = (p.frame.height().to_pt() * scale as f64) as u32;
