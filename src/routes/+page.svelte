@@ -161,26 +161,59 @@
   };
 
   const handlePrintPdf = async () => {
+    await handleExport("pdf");
+  };
+
+  const handleExport = async (type: "pdf" | "svg" | "png", filePath?: string) => {
     try {
       const { save } = await import("@tauri-apps/plugin-dialog");
       const { invoke } = await import("@tauri-apps/api/core");
 
+      const defaultName = filePath ? filePath.split("/").pop()?.replace(".typ", "") : "export";
+      const filters = {
+        pdf: [{ name: "PDF", extensions: ["pdf"] }],
+        svg: [{ name: "SVG Zip", extensions: ["zip"] }],
+        png: [{ name: "PNG Zip", extensions: ["zip"] }],
+      };
+
       const savePath = await save({
-        title: "Export PDF",
-        defaultPath: "export.pdf",
-        filters: [{ name: "PDF", extensions: ["pdf"] }],
+        title: `Export ${type.toUpperCase()}`,
+        defaultPath: `${defaultName}.${type === "pdf" ? "pdf" : "zip"}`,
+        filters: filters[type],
       });
 
       if (savePath) {
-        exportStatus = "Exporting PDF...";
-        await invoke("export_pdf", { path: savePath });
+        exportStatus = `Exporting ${type.toUpperCase()}...`;
+        await invoke(`export_${type}`, { 
+          path: savePath,
+          // If filePath is provided, it's a specific file export from context menu.
+          // However, the current backend export commands use the active project's compiled document.
+          // For now we assume we are exporting the active document if no filePath is used, 
+          // but the current backend export_* commands don't take a source file path, they just export the last compiled doc.
+          // So we ignore filePath for now as the backend logic is tied to the current project/world state.
+        });
         exportStatus = null;
       }
     } catch (e) {
-      console.error("Failed to export PDF:", e);
+      console.error(`Failed to export ${type}:`, e);
       exportStatus = null;
     }
   };
+
+  let compileTimer: any;
+  $: if ($shell.previewState === 1) { // Compiling
+    if (!compileTimer) {
+      compileTimer = setTimeout(() => {
+        shell.setIsCompilingLong(true);
+      }, 1000);
+    }
+  } else {
+    if (compileTimer) {
+      clearTimeout(compileTimer);
+      compileTimer = null;
+    }
+    shell.setIsCompilingLong(false);
+  }
 
   const handleKeyDown = (event: KeyboardEvent) => {
     if ((event.metaKey || event.ctrlKey) && event.key === "p") {
@@ -378,11 +411,16 @@
       });
 
     appWindow
+      .listen("toggle_preview", () => {
+        shell.toggleViewMode();
+      })
+      .then((unlisten) => {
+        cleanup.push(unlisten);
+      });
+
+    appWindow
       .listen<{ path: string }>("export_file_as_pdf", ({ payload }) => {
-        exportStatus = "Exporting PDF...";
-        setTimeout(() => {
-          exportStatus = null;
-        }, 2000);
+        handleExport("pdf", payload.path);
       })
       .then((unlisten) => {
         cleanup.push(unlisten);
@@ -390,10 +428,50 @@
 
     appWindow
       .listen<{ path: string }>("export_file_as_svg", ({ payload }) => {
-        exportStatus = "Exporting SVG...";
-        setTimeout(() => {
-          exportStatus = null;
-        }, 2000);
+        handleExport("svg", payload.path);
+      })
+      .then((unlisten) => {
+        cleanup.push(unlisten);
+      });
+
+    appWindow
+      .listen<{ path: string }>("export_file_as_png", ({ payload }) => {
+        handleExport("png", payload.path);
+      })
+      .then((unlisten) => {
+        cleanup.push(unlisten);
+      });
+
+    appWindow
+      .listen("menu_export_pdf", () => {
+        handleExport("pdf");
+      })
+      .then((unlisten) => {
+        cleanup.push(unlisten);
+      });
+
+    appWindow
+      .listen("menu_export_svg", () => {
+        handleExport("svg");
+      })
+      .then((unlisten) => {
+        cleanup.push(unlisten);
+      });
+
+    appWindow
+      .listen<{ stage: string; progress: number; message?: string }>(
+        "loading_progress",
+        ({ payload }) => {
+          shell.setLoadingStage(payload.message || payload.stage, payload.progress);
+        }
+      )
+      .then((unlisten) => {
+        cleanup.push(unlisten);
+      });
+
+    appWindow
+      .listen("menu_export_png", () => {
+        handleExport("png");
       })
       .then((unlisten) => {
         cleanup.push(unlisten);
@@ -434,10 +512,10 @@
     />
   {/if}
 
-  {#if exportStatus}
+  {#if exportStatus || $shell.isCompilingLong}
     <div class="export-overlay" transition:fade={{ duration: 150 }}>
       <CircleNotch size={24} class="spinner" weight="bold" />
-      <span>{exportStatus}</span>
+      <span>{exportStatus || "Compiling..."}</span>
     </div>
   {/if}
 
@@ -600,9 +678,15 @@
 
   .export-overlay :global(.spinner) {
     animation: spin 1s linear infinite;
+    display: block;
+    transform-origin: center;
+    flex-shrink: 0;
   }
 
   @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
     to {
       transform: rotate(360deg);
     }

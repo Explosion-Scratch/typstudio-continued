@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_repr::Serialize_repr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{Runtime, Manager};
+use tauri::Runtime;
 use typst::World;
 use typst_ide::{Completion, CompletionKind};
 
@@ -655,9 +655,10 @@ pub struct RecentProjectInfo {
 }
 
 #[tauri::command]
-pub async fn update_recent_menu<R: Runtime>(
+pub async fn update_menu_state<R: Runtime>(
     window: tauri::WebviewWindow<R>,
     projects: Vec<RecentProjectInfo>,
+    is_project_open: bool,
 ) -> Result<()> {
     use tauri::Manager;
     use crate::menu::{build_menu, RecentProject};
@@ -667,9 +668,9 @@ pub async fn update_recent_menu<R: Runtime>(
         path: p.path,
     }).collect();
     
-    let menu = build_menu(window.app_handle(), &recent_projects).map_err(|e| Error::Unknown)?;
-    if let Some(main_window) = window.app_handle().get_webview_window("main") {
-        let _ = main_window.set_menu(menu);
-    }
+    log::info!("Updating menu state: is_project_open={}, recent_projects_count={}", is_project_open, recent_projects.len());
+    
+    let menu = build_menu(window.app_handle(), &recent_projects, is_project_open).map_err(|_| Error::Unknown)?;
+    let _ = window.app_handle().set_menu(menu);
     Ok(())
 }

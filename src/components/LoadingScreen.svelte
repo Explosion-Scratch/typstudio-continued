@@ -39,6 +39,8 @@
   .loading-content :global(.spinner) {
     color: var(--color-text-tertiary);
     animation: spin 1s linear infinite;
+    display: block;
+    transform-origin: center;
   }
 
   .loading-text {

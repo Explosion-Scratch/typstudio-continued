@@ -98,19 +98,20 @@ pub async fn open_project<R: Runtime>(
     let path = PathBuf::from(&path);
     let path = std::fs::canonicalize(&path).unwrap_or(path);
     
-    let _ = window.emit("loading_progress", LoadingProgressEvent {
-        stage: "Loading fonts".to_string(),
-        progress: 30,
-        message: Some("Loading fonts...".to_string()),
+    let window_clone = window.clone();
+    let progress_callback = Box::new(move |stage: String, progress: u32| {
+        let _ = window_clone.emit("loading_progress", LoadingProgressEvent {
+            stage: "Loading fonts".to_string(),
+            progress,
+            message: Some(stage),
+        });
     });
-    
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    
-    let project = Arc::new(Project::load_from_path(path));
+
+    let project = Arc::new(Project::load_from_path(path, Some(progress_callback)));
     
     let _ = window.emit("loading_progress", LoadingProgressEvent {
         stage: "Finalizing".to_string(),
-        progress: 80,
+        progress: 95,
         message: Some("Finalizing...".to_string()),
     });
     

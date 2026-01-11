@@ -296,6 +296,16 @@
       });
       cleanup.push(unsubscribeTriggerCompile);
 
+      const unsubscribeSave = await appWindow.listen("menu_save", () => {
+        handleSave();
+      });
+      cleanup.push(unsubscribeSave);
+
+      const unsubscribeSaveAll = await appWindow.listen("menu_save_all", () => {
+        handleSave(); // For now just save current
+      });
+      cleanup.push(unsubscribeSaveAll);
+
       const unsubscribeReplaceRange = await appWindow.listen<{ startLine: number; endLine: number; text: string }>("replace_range", ({ payload }) => {
         if (editorInstance) {
           const model = editorInstance.getModel();

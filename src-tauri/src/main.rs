@@ -11,7 +11,7 @@ mod project;
 
 use crate::compiler::Compiler;
 
-use crate::menu::handle_menu_event;
+
 use crate::project::ProjectManager;
 use env_logger::Env;
 use log::info;
@@ -38,7 +38,7 @@ async fn main() {
         .manage(project_manager.clone())
         .setup(move |app| {
             let handle = app.handle();
-            let menu = menu::build_menu(handle, &[])?;
+            let menu = menu::build_menu(handle, &[], false)?;
             app.set_menu(menu)?;
             app.on_menu_event(|app, event| {
                 menu::handle_menu_event(app, event);
@@ -72,7 +72,7 @@ async fn main() {
             ipc::commands::export_pdf,
             ipc::commands::export_svg,
             ipc::commands::export_png,
-            ipc::commands::update_recent_menu
+            ipc::commands::update_menu_state
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -83,10 +83,10 @@ impl ProjectWorld {
         self.main.is_some()
     }
 
-    pub fn new(root: PathBuf) -> Self {
+    pub fn new(root: PathBuf, progress: Option<Box<dyn Fn(String, u32) + Send>>) -> Self {
         Self {
             root,
-            engine: Arc::new(TypstEngine::new()),
+            engine: Arc::new(TypstEngine::new(progress)),
             slots: RwLock::new(HashMap::new()),
             main: None,
         }
@@ -278,7 +278,7 @@ mod tests {
         
         // 1. Initialize world
         let root = PathBuf::from(".");
-        let mut world = ProjectWorld::new(root);
+        let mut world = ProjectWorld::new(root, None);
         
         // 2. Set main file content
         let content = r#"#set text(font: "New Computer Modern")

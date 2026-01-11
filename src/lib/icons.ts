@@ -39,7 +39,8 @@ import {
   Eye,
   Columns,
   FilePdf,
-  FileSvg
+  FileSvg,
+  FileImage
 } from "phosphor-svelte";
 
 export {
@@ -83,7 +84,8 @@ export {
   Eye,
   Columns,
   FilePdf,
-  FileSvg
+  FileSvg,
+  FileImage
 };
 
 export const ICON_SIZE_SM = 16;

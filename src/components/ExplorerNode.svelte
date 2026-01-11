@@ -13,6 +13,7 @@
     Pencil,
     FilePdf,
     FileSvg,
+    FileImage,
   } from "$lib/icons";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   const appWindow = getCurrentWindow();
@@ -97,6 +98,10 @@
     appWindow.emit("export_file_as_svg", { path });
   };
 
+  const handleExportPng = () => {
+    appWindow.emit("export_file_as_png", { path });
+  };
+
   const getContextMenuItems = (): ContextMenuItem[] => {
     const items: ContextMenuItem[] = [
       {
@@ -118,6 +123,11 @@
           label: "Export to SVG",
           icon: FileSvg,
           action: handleExportSvg,
+        },
+        {
+          label: "Export to PNG",
+          icon: FileImage,
+          action: handleExportPng,
         }
       );
     }

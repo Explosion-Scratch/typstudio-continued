@@ -33,6 +33,7 @@ export interface Shell {
   loadingStage: string;
   loadingProgress: number;
   isOpeningProject: boolean;
+  isCompilingLong: boolean;
 }
 
 export interface BaseModal {
@@ -79,6 +80,7 @@ const createShell = () => {
     loadingStage: "Initializing...",
     loadingProgress: 0,
     isOpeningProject: false,
+    isCompilingLong: false,
   });
 
   let currentRequestId = 0;
@@ -161,6 +163,9 @@ const createShell = () => {
     setIsOpeningProject(isOpeningProject: boolean) {
       update((shell) => ({ ...shell, isOpeningProject }));
     },
+    setIsCompilingLong(isCompilingLong: boolean) {
+      update((shell) => ({ ...shell, isCompilingLong }));
+    },
   };
 };
 
@@ -209,9 +214,6 @@ const createRecentProjects = () => {
           ...filtered,
         ].slice(0, MAX_RECENT_PROJECTS);
         saveRecentProjects(newProjects);
-        import("@tauri-apps/api/core").then(({ invoke }) => {
-            invoke("update_recent_menu", { projects: newProjects }).catch(console.error);
-        });
         return newProjects;
       });
     },
@@ -219,18 +221,13 @@ const createRecentProjects = () => {
       update((projects) => {
         const newProjects = projects.filter((p) => p.path !== path);
         saveRecentProjects(newProjects);
-        import("@tauri-apps/api/core").then(({ invoke }) => {
-            invoke("update_recent_menu", { projects: newProjects }).catch(console.error);
-        });
         return newProjects;
       });
     },
     clear() {
       set([]);
+      console.log("Recent projects cleared");
       saveRecentProjects([]);
-      import("@tauri-apps/api/core").then(({ invoke }) => {
-            invoke("update_recent_menu", { projects: [] }).catch(console.error);
-      });
     },
   };
 };

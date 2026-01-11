@@ -1,16 +1,19 @@
 <script>
   import "../app.css";
   import { onMount } from "svelte";
-  import { recentProjects, shell } from "$lib/stores";
+  import { recentProjects, shell, project } from "$lib/stores";
   import { invoke } from "@tauri-apps/api/core";
 
   let { children } = $props();
 
-  onMount(async () => {
+  $effect(() => {
     const projects = $recentProjects;
-    if (projects.length > 0) {
-      invoke("update_recent_menu", { projects }).catch(console.error);
-    }
+    const is_project_open = !!$project;
+    console.log("[Layout] Updating menu state:", { project_count: projects.length, is_project_open });
+    invoke("update_menu_state", { projects, is_project_open }).catch(console.error);
+  });
+
+  onMount(async () => {
     
     // Listen for export menu events
     const { listen } = await import("@tauri-apps/api/event");

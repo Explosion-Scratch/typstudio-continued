@@ -88,13 +88,13 @@ impl Default for ProjectConfig {
 }
 
 impl Project {
-    pub fn load_from_path(path: PathBuf) -> Self {
+    pub fn load_from_path(path: PathBuf, progress: Option<Box<dyn Fn(String, u32) + Send>>) -> Self {
         let path = fs::canonicalize(&path).unwrap_or(path);
         let config =
             ProjectConfig::read_from_file(path.join(PATH_PROJECT_CONFIG_FILE)).unwrap_or_default();
 
         Self {
-            world: ProjectWorld::new(path.clone()).into(),
+            world: ProjectWorld::new(path.clone(), progress).into(),
             cache: RwLock::new(Default::default()),
             config: RwLock::new(config),
             root: path,

@@ -30,16 +30,20 @@ impl FontSearcher {
     }
 
     /// Search everything that is available.
-    pub fn search(&mut self, font_paths: &[PathBuf]) {
+    pub fn search(&mut self, font_paths: &[PathBuf], progress: Option<Box<dyn Fn(String, u32) + Send>>) {
+        if let Some(ref p) = progress { p("Searching system fonts...".to_string(), 10); }
         self.search_system();
 
+        if let Some(ref p) = progress { p("Searching embedded fonts...".to_string(), 40); }
         self.search_embedded();
 
+        if let Some(ref p) = progress { p("Searching project fonts...".to_string(), 70); }
         for path in font_paths {
             self.search_dir(path);
         }
 
         log::info!("discovered {} fonts", self.fonts.len());
+        if let Some(ref p) = progress { p("Finalizing fonts...".to_string(), 100); }
     }
 
     /// Add fonts that are embedded in the binary.

@@ -10,9 +10,9 @@ pub struct TypstEngine {
 }
 
 impl TypstEngine {
-    pub fn new() -> Self {
+    pub fn new(progress: Option<Box<dyn Fn(String, u32) + Send>>) -> Self {
         let mut searcher = FontSearcher::new();
-        searcher.search(&[]);
+        searcher.search(&[], progress);
 
 
 

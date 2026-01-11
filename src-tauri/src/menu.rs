@@ -12,9 +12,11 @@ pub struct RecentProject {
     pub path: String,
 }
 
-pub fn build_menu<R: Runtime>(handle: &AppHandle<R>, recent_projects: &[RecentProject]) -> tauri::Result<Menu<R>> {
+pub fn build_menu<R: Runtime>(handle: &AppHandle<R>, recent_projects: &[RecentProject], is_project_open: bool) -> tauri::Result<Menu<R>> {
+    use tauri::menu::{MenuItemBuilder, CheckMenuItemBuilder};
+
     let app_menu = SubmenuBuilder::new(handle, "Typstudio")
-        .about(Some(tauri::menu::AboutMetadata::default())) // About is now a method on SubmenuBuilder or a predefined item
+        .about(Some(tauri::menu::AboutMetadata::default()))
         .separator()
         .services()
         .separator()
@@ -25,48 +27,43 @@ pub fn build_menu<R: Runtime>(handle: &AppHandle<R>, recent_projects: &[RecentPr
         .quit()
         .build()?;
 
-    let mut recent_menu = SubmenuBuilder::new(handle, "Open Recent");
+    let mut recent_menu_builder = SubmenuBuilder::new(handle, "Open Recent");
     if recent_projects.is_empty() {
-        recent_menu = recent_menu.text("file_recent_none", "No Recent Projects"); // .disabled() needs check
-        // TextMenuItemBuilder might be needed for disabled
+        recent_menu_builder = recent_menu_builder.item(
+            &MenuItemBuilder::with_id("file_recent_none", "No Recent Projects")
+                .enabled(false)
+                .build(handle)?
+        );
     } else {
         for (i, project) in recent_projects.iter().enumerate() {
             let id = format!("file_recent_item_{}", i);
-             recent_menu = recent_menu.text(id, &project.name);
+            recent_menu_builder = recent_menu_builder.text(id, &project.name);
         }
     }
-    // Note: submenu building logic is slightly different, usually we define items.
-    // Let's use MenuBuilder directly for recent_menu if it's a submenu? 
-    // Submenu is a Menu.
     
-    // Actually SubmenuBuilder::new returns a builder.
-    // For disabled items:
-    // .item(&MenuItemBuilder::with_id("id", "text").enabled(false).build(handle)?)
-    
-    // Let's simplified handling for now.
-    let recent_sub = recent_menu
+    let recent_sub = recent_menu_builder
         .separator()
         .text("file_clear_recent", "Clear Recent")
         .build()?;
 
+    let export_menu = SubmenuBuilder::new(handle, "Export")
+        .item(&MenuItemBuilder::with_id("file_export_pdf", "Export as PDF...").enabled(is_project_open).build(handle)?)
+        .item(&MenuItemBuilder::with_id("file_export_svg", "Export as SVG (Zip)...").enabled(is_project_open).build(handle)?)
+        .item(&MenuItemBuilder::with_id("file_export_png", "Export as PNG (Zip)...").enabled(is_project_open).build(handle)?)
+        .build()?;
+
     let file_menu = SubmenuBuilder::new(handle, "File")
-        .text("file_new_project", "New Project") // accelerator needs separate builder
+        .text("file_new_project", "New Project")
         .text("file_open_project", "Open Project...")
         .item(&recent_sub)
         .separator()
-        .text("file_save", "Save")
-        .text("file_save_all", "Save All")
+        .item(&MenuItemBuilder::with_id("file_save", "Save").enabled(is_project_open).build(handle)?)
+        .item(&MenuItemBuilder::with_id("file_save_all", "Save All").enabled(is_project_open).build(handle)?)
         .separator()
-        .item(
-            &SubmenuBuilder::new(handle, "Export")
-                .text("file_export_pdf", "Export as PDF...")
-                .text("file_export_svg", "Export as SVG (Zip)...")
-                .text("file_export_png", "Export as PNG (Zip)...")
-                .build()?
-        )
+        .item(&export_menu)
         .separator()
-        .text("file_close_project", "Close Project")
-        .quit() // if safe
+        .item(&MenuItemBuilder::with_id("file_close_project", "Close Project").enabled(is_project_open).build(handle)?)
+        .quit()
         .build()?;
 
     let edit_menu = SubmenuBuilder::new(handle, "Edit")
@@ -80,14 +77,14 @@ pub fn build_menu<R: Runtime>(handle: &AppHandle<R>, recent_projects: &[RecentPr
         .build()?;
 
     let view_menu = SubmenuBuilder::new(handle, "View")
-        .text("view_toggle_sidebar", "Toggle Sidebar")
-        .text("view_toggle_preview", "Toggle Preview")
+        .item(&MenuItemBuilder::with_id("view_toggle_sidebar", "Toggle Sidebar").accelerator("CmdOrCtrl+B").enabled(is_project_open).build(handle)?)
+        .item(&MenuItemBuilder::with_id("view_toggle_preview", "Toggle Preview").accelerator("CmdOrCtrl+Enter").enabled(is_project_open).build(handle)?)
         .separator()
         .fullscreen()
         .build()?;
 
     let packages_menu = SubmenuBuilder::new(handle, "Packages")
-        .text("packages_install", "Install Package...")
+        .item(&MenuItemBuilder::with_id("packages_install", "Install Package...").enabled(is_project_open).build(handle)?)
         .build()?;
 
     let help_menu = SubmenuBuilder::new(handle, "Help")
@@ -124,7 +121,7 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
                  match create_playground().await {
                     Ok(path) => {
                          let path = fs::canonicalize(&path).unwrap_or(PathBuf::from(path));
-                         let project = Arc::new(Project::load_from_path(path));
+                          let project = Arc::new(Project::load_from_path(path, None));
                          let project_manager: State<'_, Arc<ProjectManager<R>>> = app_handle.state();
                          if let Some(w) = app_handle.get_webview_window("main") {
                              project_manager.set_project(&w, Some(project));
@@ -142,7 +139,7 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
                       if let Ok(path) = path.into_path() {
                           let path = fs::canonicalize(&path).unwrap_or(path);
                           let project_manager: State<'_, Arc<ProjectManager<R>>> = window_clone.state();
-                          let project = Arc::new(Project::load_from_path(path));
+                           let project = Arc::new(Project::load_from_path(path, None));
                           project_manager.set_project(&window_clone, Some(project));
                       }
                  }
@@ -150,6 +147,9 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
         }
         "file_save" => { let _ = window.emit("menu_save", ()); }
         "file_save_all" => { let _ = window.emit("menu_save_all", ()); }
+        "file_export_pdf" => { let _ = window.emit("menu_export_pdf", ()); }
+        "file_export_svg" => { let _ = window.emit("menu_export_svg", ()); }
+        "file_export_png" => { let _ = window.emit("menu_export_png", ()); }
         "file_close_project" => {
              let project_manager: State<'_, Arc<ProjectManager<R>>> = window.state();
              project_manager.set_project(&window, None);
