@@ -39,11 +39,14 @@
     try {
       const path = await invoke("create_playground");
       if (path && typeof path === "string") {
+        shell.setIsOpeningProject(true);
+        shell.setLoadingStage(`Creating project...`, 0);
         await invoke("open_project", { path });
       }
     } catch (e) {
       console.error("Failed to create project:", e);
       isLoading = false;
+      shell.setIsOpeningProject(false);
     }
   };
 
@@ -59,10 +62,13 @@
       loadingMessage = "Opening project...";
       loadingProgress = 0;
       try {
+        shell.setIsOpeningProject(true);
+        shell.setLoadingStage(`Opening project...`, 0);
         await invoke("open_project", { path });
       } catch (e) {
         console.error("Failed to open project:", e);
         isLoading = false;
+        shell.setIsOpeningProject(false);
       }
     }
   };
@@ -72,11 +78,14 @@
     loadingMessage = "Opening project...";
     loadingProgress = 0;
     try {
+      shell.setIsOpeningProject(true);
+      shell.setLoadingStage(`Opening project...`, 0);
       await invoke("open_project", { path });
     } catch (e) {
       console.error("Failed to open project:", e);
       recentProjects.removeProject(path);
       isLoading = false;
+      shell.setIsOpeningProject(false);
     }
   };
 

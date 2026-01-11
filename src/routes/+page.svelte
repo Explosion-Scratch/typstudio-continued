@@ -148,10 +148,13 @@
       });
 
       if (selected && typeof selected === "string") {
+        shell.setIsOpeningProject(true);
+        shell.setLoadingStage(`Opening ${selected.split("/").pop() || "folder"}...`, 0);
         await invoke("open_project", { path: selected });
       }
     } catch (e) {
       console.error("Failed to open folder dialog:", e);
+      shell.setIsOpeningProject(false);
     }
   };
 
@@ -308,6 +311,7 @@
 
     appWindow
       .listen<ProjectChangeEvent>("project_changed", async ({ payload }) => {
+        shell.setIsOpeningProject(false);
         shell.selectFile(undefined);
         project.set(payload.project);
 
@@ -435,7 +439,7 @@
     </div>
   {/if}
 
-  {#if $shell.isInitializing}
+  {#if $shell.isInitializing || $shell.isOpeningProject}
     <LoadingScreen stage={$shell.loadingStage} progress={$shell.loadingProgress} />
   {:else if !$project}
     <WelcomeScreen />

@@ -31,6 +31,7 @@ export interface Shell {
   viewMode: "both" | "editor" | "preview";
   loadingStage: string;
   loadingProgress: number;
+  isOpeningProject: boolean;
 }
 
 export interface BaseModal {
@@ -76,6 +77,7 @@ const createShell = () => {
     viewMode: "both",
     loadingStage: "Initializing...",
     loadingProgress: 0,
+    isOpeningProject: false,
   });
 
   let currentRequestId = 0;
@@ -154,6 +156,9 @@ const createShell = () => {
         loadingStage: stage,
         loadingProgress: progress ?? shell.loadingProgress,
       }));
+    },
+    setIsOpeningProject(isOpeningProject: boolean) {
+      update((shell) => ({ ...shell, isOpeningProject }));
     },
   };
 };

@@ -2,6 +2,8 @@
   import type { TypstRenderResponse } from "../lib/ipc";
   import { render } from "../lib/ipc";
   import { onMount } from "svelte";
+  import { CircleNotch } from "../lib/icons";
+  import { fade } from "svelte/transition";
 
   export let page: number;
   export let hash: string;
@@ -14,6 +16,9 @@
   let isIntersecting = false;
   let nonce = 1;
   let lastNonce = 0;
+  let loading = false;
+  let showLoading = false;
+  let loadingTimer: any;
 
   onMount(() => {
     const observer = new IntersectionObserver((entries) => {
@@ -29,18 +34,30 @@
   };
 
   const update = async (updateHash: string, updateScale: number) => {
-    const res: TypstRenderResponse = await render(page, updateScale, nonce++);
+    loading = true;
+    clearTimeout(loadingTimer);
+    loadingTimer = setTimeout(() => {
+      if (loading) showLoading = true;
+    }, 1000);
 
-    if (res.nonce > lastNonce) {
-      lastNonce = res.nonce;
-      container.innerHTML = res.image;
-      
-      const svgEl = container.querySelector("svg");
-      if (svgEl) {
-        svgEl.style.width = "100%";
-        svgEl.style.height = "100%";
-        svgEl.style.display = "block";
+    try {
+      const res: TypstRenderResponse = await render(page, updateScale, nonce++);
+
+      if (res.nonce > lastNonce) {
+        lastNonce = res.nonce;
+        container.innerHTML = res.image;
+        
+        const svgEl = container.querySelector("svg");
+        if (svgEl) {
+          svgEl.style.width = "100%";
+          svgEl.style.height = "100%";
+          svgEl.style.display = "block";
+        }
       }
+    } finally {
+      loading = false;
+      showLoading = false;
+      clearTimeout(loadingTimer);
     }
   };
 
@@ -52,7 +69,13 @@
   style="height: {height}px; min-height: {height}px; width: {width}px; min-width: {width}px; --height: {height}px;"
   bind:this={container}
   data-page={page}
-></div>
+>
+  {#if showLoading}
+    <div class="page-loading" transition:fade={{ duration: 150 }}>
+      <CircleNotch size={24} class="spinner" weight="bold" />
+    </div>
+  {/if}
+</div>
 
 <style>
   .preview-page {
@@ -70,5 +93,25 @@
     width: 100%;
     height: 100%;
     display: block;
+  }
+  
+  .page-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.5);
+    z-index: 5;
+  }
+  
+  .page-loading :global(.spinner) {
+    animation: spin 1s linear infinite;
+    color: var(--color-text-secondary);
+  }
+  
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
   }
 </style>
