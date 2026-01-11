@@ -20,7 +20,7 @@ pub struct ClipboardPasteResponse {
 
 #[tauri::command]
 pub async fn clipboard_paste<R: Runtime>(
-    window: tauri::Window<R>,
+    window: tauri::WebviewWindow<R>,
     project_manager: tauri::State<'_, Arc<ProjectManager<R>>>,
 ) -> Result<ClipboardPasteResponse> {
     let now = Local::now();

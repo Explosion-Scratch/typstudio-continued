@@ -6,7 +6,7 @@ use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
-use tauri::{Runtime, Window};
+use tauri::{Runtime, WebviewWindow, Emitter};
 use tokio::sync::mpsc::channel;
 
 #[derive(Clone, Copy, Debug)]
@@ -16,7 +16,7 @@ enum FSHandleKind {
 }
 
 pub struct ProjectManager<R: Runtime> {
-    projects: RwLock<HashMap<Window<R>, Arc<Project>>>,
+    projects: RwLock<HashMap<String, (WebviewWindow<R>, Arc<Project>)>>,
     watcher: Mutex<Option<Box<dyn Watcher + Send + Sync>>>,
 }
 
@@ -54,18 +54,18 @@ impl<R: Runtime> ProjectManager<R> {
         *inner = Some(watcher);
     }
 
-    pub fn get_project(&self, window: &Window<R>) -> Option<Arc<Project>> {
-        self.projects.read().unwrap().get(window).cloned()
+    pub fn get_project(&self, window: &WebviewWindow<R>) -> Option<Arc<Project>> {
+        self.projects.read().unwrap().get(window.label()).map(|(_, p)| p.clone())
     }
 
-    pub fn set_project(&self, window: &Window<R>, project: Option<Arc<Project>>) {
+    pub fn set_project(&self, window: &WebviewWindow<R>, project: Option<Arc<Project>>) {
         let mut projects = self.projects.write().unwrap();
         let model = project.as_ref().map(|p| ProjectModel {
             root: p.root.clone(),
         });
         match project {
             None => {
-                if let Some(old) = projects.remove(window) {
+                if let Some((_, old)) = projects.remove(window.label()) {
                     let mut guard = self.watcher.lock().unwrap();
                     if let Some(watcher) = guard.as_mut() {
                         let _ = watcher.unwatch(&old.root);
@@ -77,7 +77,7 @@ impl<R: Runtime> ProjectManager<R> {
 
                 let root = &p.root.clone();
                 let mut guard = self.watcher.lock().unwrap();
-                if let Some(old) = projects.insert(window.clone(), p) {
+                if let Some((_, old)) = projects.insert(window.label().to_string(), (window.clone(), p)) {
                     if let Some(watcher) = guard.as_mut() {
                         let _ = watcher.unwatch(&old.root);
                     }
@@ -111,7 +111,7 @@ impl<R: Runtime> ProjectManager<R> {
             let path = path.canonicalize().unwrap_or(path);
             let projects = self.projects.read().unwrap();
 
-            for (window, project) in &*projects {
+            for (window, project) in projects.values() {
                 if path.starts_with(&project.root) {
                     self.handle_project_fs_event(project, window, &path, kind);
                 }
@@ -122,7 +122,7 @@ impl<R: Runtime> ProjectManager<R> {
     fn handle_project_fs_event(
         &self,
         project: &Project,
-        window: &Window<R>,
+        window: &WebviewWindow<R>,
         path: &PathBuf,
         kind: FSHandleKind,
     ) {

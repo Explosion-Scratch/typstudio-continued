@@ -9,7 +9,7 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{Runtime, State, Window};
+use tauri::{Runtime, State, WebviewWindow};
 
 #[derive(Serialize, Debug)]
 pub struct FileItem {
@@ -30,7 +30,7 @@ pub enum FileType {
 /// messaging system in v1. See: https://github.com/tauri-apps/tauri/issues/1817
 #[tauri::command]
 pub async fn fs_read_file_binary<R: Runtime>(
-    window: Window<R>,
+    window: WebviewWindow<R>,
     project_manager: State<'_, Arc<ProjectManager<R>>>,
     path: PathBuf,
 ) -> Result<Vec<u8>> {
@@ -40,7 +40,7 @@ pub async fn fs_read_file_binary<R: Runtime>(
 
 #[tauri::command]
 pub async fn fs_read_file_text<R: Runtime>(
-    window: Window<R>,
+    window: WebviewWindow<R>,
     project_manager: State<'_, Arc<ProjectManager<R>>>,
     path: PathBuf,
 ) -> Result<String> {
@@ -50,7 +50,7 @@ pub async fn fs_read_file_text<R: Runtime>(
 
 #[tauri::command]
 pub async fn fs_create_file<R: Runtime>(
-    window: Window<R>,
+    window: WebviewWindow<R>,
     project_manager: State<'_, Arc<ProjectManager<R>>>,
     path: PathBuf,
 ) -> Result<()> {
@@ -72,7 +72,7 @@ pub async fn fs_create_file<R: Runtime>(
 
 #[tauri::command]
 pub async fn fs_write_file_binary<R: Runtime>(
-    window: Window<R>,
+    window: WebviewWindow<R>,
     project_manager: State<'_, Arc<ProjectManager<R>>>,
     path: PathBuf,
     content: Vec<u8>,
@@ -83,13 +83,16 @@ pub async fn fs_write_file_binary<R: Runtime>(
 
 #[tauri::command]
 pub async fn fs_write_file_text<R: Runtime>(
-    window: Window<R>,
+    window: WebviewWindow<R>,
     project_manager: State<'_, Arc<ProjectManager<R>>>,
     path: PathBuf,
     content: String,
 ) -> Result<()> {
     let (project, absolute_path) = project_path(&window, &project_manager, &path)?;
-    let _ = File::create(absolute_path)
+    if let Some(parent) = absolute_path.parent() {
+        fs::create_dir_all(parent).map_err(Into::<Error>::into)?;
+    }
+    let _ = File::create(&absolute_path)
         .map(|mut f| f.write_all(content.as_bytes()))
         .map_err(Into::<Error>::into)?;
 
@@ -106,7 +109,7 @@ pub async fn fs_write_file_text<R: Runtime>(
 
 #[tauri::command]
 pub async fn fs_list_dir<R: Runtime>(
-    window: Window<R>,
+    window: WebviewWindow<R>,
     project_manager: State<'_, Arc<ProjectManager<R>>>,
     path: PathBuf,
 ) -> Result<Vec<FileItem>> {
@@ -145,7 +148,7 @@ pub async fn fs_list_dir<R: Runtime>(
 
 #[tauri::command]
 pub async fn fs_delete_file<R: Runtime>(
-    window: Window<R>,
+    window: WebviewWindow<R>,
     project_manager: State<'_, Arc<ProjectManager<R>>>,
     path: PathBuf,
 ) -> Result<()> {
@@ -160,7 +163,7 @@ pub async fn fs_delete_file<R: Runtime>(
 
 #[tauri::command]
 pub async fn fs_rename_file<R: Runtime>(
-    window: Window<R>,
+    window: WebviewWindow<R>,
     project_manager: State<'_, Arc<ProjectManager<R>>>,
     old_path: PathBuf,
     new_path: PathBuf,
@@ -172,7 +175,7 @@ pub async fn fs_rename_file<R: Runtime>(
 }
 #[tauri::command]
 pub async fn fs_reveal_path<R: Runtime>(
-    window: Window<R>,
+    window: WebviewWindow<R>,
     project_manager: State<'_, Arc<ProjectManager<R>>>,
     path: PathBuf,
 ) -> Result<()> {

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { shell, type OutlineItem } from "$lib/stores";
   import { TextH, ImageIcon, Table, List, CaretRight, CaretDown, MagnifyingGlass, Trash, Export, Link } from "$lib/icons";
-  import { appWindow } from "@tauri-apps/api/window";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
+  const appWindow = getCurrentWindow();
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
   import { writeFileText } from "$lib/ipc";
 

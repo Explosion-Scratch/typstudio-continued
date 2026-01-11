@@ -6,7 +6,8 @@
 
   import type { TypstCompileEvent, TypstSourceDiagnostic } from "../lib/ipc";
   import { jump } from "../lib/ipc";
-  import { appWindow } from "@tauri-apps/api/window";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
+  const appWindow = getCurrentWindow();
   import { shell, PreviewState } from "$lib/stores";
 
 

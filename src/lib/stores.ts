@@ -209,6 +209,9 @@ const createRecentProjects = () => {
           ...filtered,
         ].slice(0, MAX_RECENT_PROJECTS);
         saveRecentProjects(newProjects);
+        import("@tauri-apps/api/core").then(({ invoke }) => {
+            invoke("update_recent_menu", { projects: newProjects }).catch(console.error);
+        });
         return newProjects;
       });
     },
@@ -216,12 +219,18 @@ const createRecentProjects = () => {
       update((projects) => {
         const newProjects = projects.filter((p) => p.path !== path);
         saveRecentProjects(newProjects);
+        import("@tauri-apps/api/core").then(({ invoke }) => {
+            invoke("update_recent_menu", { projects: newProjects }).catch(console.error);
+        });
         return newProjects;
       });
     },
     clear() {
       set([]);
       saveRecentProjects([]);
+      import("@tauri-apps/api/core").then(({ invoke }) => {
+            invoke("update_recent_menu", { projects: [] }).catch(console.error);
+      });
     },
   };
 };

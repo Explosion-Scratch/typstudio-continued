@@ -12,14 +12,18 @@ rust-version = "1.75"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
-tauri-build = { version = "1.5", features = [] }
+tauri-build = { version = "2.0.0", features = [] }
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_repr = "0.1"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }
-tauri = { version = "1.6", features = ["devtools", "dialog-all", "shell-open"] }
+tauri = { version = "2.3", features = ["devtools"] }
+tauri-plugin-shell = "2.2"
+tauri-plugin-dialog = "2.2"
+tauri-plugin-fs = "2.3"
+tauri-plugin-opener = "2.2"
 anyhow = "1.0"
 thiserror = "1.0"
 enumset = { version = "1.1", features = ["serde"] }
@@ -38,6 +42,7 @@ dirs = "5.0"
 walkdir = "2.5"
 memmap2 = "0.9"
 opener = { version = "0.7", features = ["reveal"] }
+zip = "0.6"
 
 typst = "0.14"
 typst-ide = "0.14"

@@ -14,7 +14,8 @@
     FilePdf,
     FileSvg,
   } from "$lib/icons";
-  import { appWindow } from "@tauri-apps/api/window";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
+  const appWindow = getCurrentWindow();
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
 
   export let type: FileType;

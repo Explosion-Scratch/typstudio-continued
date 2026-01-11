@@ -6,7 +6,8 @@
   import { initMonaco } from "../lib/editor/monaco";
   import type { TypstCompileEvent, TypstSourceDiagnostic } from "../lib/ipc";
   import { compile, readFileText, writeFileText, jumpFromCursor } from "../lib/ipc";
-  import { appWindow } from "@tauri-apps/api/window";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
+  const appWindow = getCurrentWindow();
   import { paste } from "$lib/ipc/clipboard";
   import { PreviewState, shell } from "$lib/stores";
   import { extractOutlineFromSource } from "$lib/outline";

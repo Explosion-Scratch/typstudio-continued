@@ -7,8 +7,10 @@
   import WelcomeScreen from "../components/WelcomeScreen.svelte";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import { onMount } from "svelte";
-  import { appWindow } from "@tauri-apps/api/window";
-  import { open } from "@tauri-apps/api/shell";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
+
+  
+  const appWindow = getCurrentWindow();
   import SidePanel from "../components/SidePanel.svelte";
   import Modals from "../components/ShellModal.svelte";
   import { fade } from "svelte/transition";
@@ -138,8 +140,8 @@
 
   const handleOpenFolderDialog = async () => {
     try {
-      const { open: openDialog } = await import("@tauri-apps/api/dialog");
-      const { invoke } = await import("@tauri-apps/api");
+      const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
+      const { invoke } = await import("@tauri-apps/api/core");
 
       const selected = await openDialog({
         directory: true,
@@ -160,8 +162,8 @@
 
   const handlePrintPdf = async () => {
     try {
-      const { save } = await import("@tauri-apps/api/dialog");
-      const { invoke } = await import("@tauri-apps/api");
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const { invoke } = await import("@tauri-apps/api/core");
 
       const savePath = await save({
         title: "Export PDF",

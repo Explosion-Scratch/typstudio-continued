@@ -3,7 +3,7 @@
   import { onMount } from "svelte";
   import { listPackages, deletePackage, installPackage, type InstalledPackage } from "$lib/ipc";
   import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
-  import { shell as tauriShell } from "@tauri-apps/api";
+  import { open as openUrl } from "@tauri-apps/plugin-shell";
 
   let packages: InstalledPackage[] = [];
   let isLoading = true;
@@ -67,7 +67,7 @@
   };
 
   const openTypstUniverse = (pkg: InstalledPackage) => {
-    tauriShell.open(`https://typst.app/universe/package/${pkg.name}`);
+    openUrl(`https://typst.app/universe/package/${pkg.name}`);
   };
 
   const getContextMenuItems = (pkg: InstalledPackage): ContextMenuItem[] => [

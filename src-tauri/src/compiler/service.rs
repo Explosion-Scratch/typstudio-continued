@@ -61,7 +61,7 @@ impl<R: Runtime> Compiler<R> {
                     let pm = project_manager.clone();
                     // We need a window handle to emit events. 
                     // We can resolve it from the app handle using the label.
-                    let window = app.get_window(&req.window_label);
+                    let window = app.get_webview_window(&req.window_label);
 
                     if let Some(window) = window {
                         let inner_token = token.clone();
@@ -89,7 +89,7 @@ impl<R: Runtime> Compiler<R> {
 
 fn compile_job<R: Runtime>(
     project_manager: Arc<ProjectManager<R>>,
-    window: tauri::Window<R>,
+    window: tauri::WebviewWindow<R>,
     req: CompileRequest,
     token: Arc<AtomicBool>,
 ) {

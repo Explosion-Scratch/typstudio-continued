@@ -3,7 +3,8 @@
   import { project, shell } from "$lib/stores";
   import { createFile } from "$lib/ipc";
   import { Plus, ArrowClockwise } from "$lib/icons";
-  import { appWindow } from "@tauri-apps/api/window";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
+  const appWindow = getCurrentWindow();
 </script>
 
 <div class="explorer-tree">

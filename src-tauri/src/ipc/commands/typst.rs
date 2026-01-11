@@ -1,5 +1,5 @@
 use super::{Error, Result};
-use crate::compiler::{CompileRequest, Compiler}; // NEW
+use crate::compiler::{CompileRequest, Compiler};
 use crate::ipc::commands::project;
 use crate::ipc::model::TypstRenderResponse;
 use crate::project::ProjectManager;
@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_repr::Serialize_repr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::Runtime;
+use tauri::{Runtime, Manager};
 use typst::World;
 use typst_ide::{Completion, CompletionKind};
 
@@ -69,7 +69,7 @@ impl From<Completion> for TypstCompletion {
 // REFACTORED COMMAND
 #[tauri::command]
 pub async fn typst_compile<R: Runtime>(
-    window: tauri::Window<R>,
+    window: tauri::WebviewWindow<R>,
     compiler: tauri::State<'_, Arc<Compiler<R>>>,
     path: PathBuf,
     content: String,
@@ -87,7 +87,7 @@ pub async fn typst_compile<R: Runtime>(
 
 #[tauri::command]
 pub async fn typst_render<R: Runtime>(
-    window: tauri::Window<R>,
+    window: tauri::WebviewWindow<R>,
     project_manager: tauri::State<'_, Arc<ProjectManager<R>>>,
     page: usize,
     scale: f32,
@@ -120,7 +120,7 @@ pub async fn typst_render<R: Runtime>(
 
 #[tauri::command]
 pub async fn typst_autocomplete<R: Runtime>(
-    window: tauri::Window<R>,
+    window: tauri::WebviewWindow<R>,
     project_manager: tauri::State<'_, Arc<ProjectManager<R>>>,
     path: PathBuf,
     content: String,
@@ -227,7 +227,7 @@ fn find_precise_jump(
 
 #[tauri::command]
 pub async fn typst_jump<R: Runtime>(
-    window: tauri::Window<R>,
+    window: tauri::WebviewWindow<R>,
     project_manager: tauri::State<'_, Arc<ProjectManager<R>>>,
     page: usize,
     x: f64,
@@ -319,7 +319,7 @@ pub struct TypstDocumentPosition {
 
 #[tauri::command]
 pub async fn typst_jump_from_cursor<R: Runtime>(
-    window: tauri::Window<R>,
+    window: tauri::WebviewWindow<R>,
     project_manager: tauri::State<'_, Arc<ProjectManager<R>>>,
     path: PathBuf,
     content: String,
@@ -533,7 +533,7 @@ pub async fn typst_install_package(spec: String) -> Result<()> {
 
 #[tauri::command]
 pub async fn export_pdf<R: Runtime>(
-    window: tauri::Window<R>,
+    window: tauri::WebviewWindow<R>,
     project_manager: tauri::State<'_, Arc<ProjectManager<R>>>,
     path: String,
 ) -> Result<()> {
@@ -555,5 +555,121 @@ pub async fn export_pdf<R: Runtime>(
     std::fs::write(&path_buf, pdf).map_err(Into::<Error>::into)?;
     debug!("Exported PDF to {:?}", path_buf);
     
+    Ok(())
+}
+
+
+#[tauri::command]
+pub async fn export_svg<R: Runtime>(
+    window: tauri::WebviewWindow<R>,
+    project_manager: tauri::State<'_, Arc<ProjectManager<R>>>,
+    path: String,
+) -> Result<()> {
+    let project = project_manager
+        .get_project(&window)
+        .ok_or(Error::UnknownProject)?;
+
+    let cache = project.cache.read().unwrap();
+    let doc = cache.document.as_ref().ok_or(Error::Unknown)?;
+
+    let mut path_buf = PathBuf::from(&path);
+    if path_buf.extension().is_none() {
+        path_buf.set_extension("zip");
+    }
+
+    let file = std::fs::File::create(&path_buf).map_err(Into::<Error>::into)?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::FileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored);
+
+    for (i, page) in doc.pages.iter().enumerate() {
+        let svg = typst_svg::svg(page);
+        let filename = format!("page_{:02}.svg", i + 1);
+        zip.start_file(filename, options).map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        use std::io::Write;
+        zip.write_all(svg.as_bytes()).map_err(Into::<Error>::into)?;
+    }
+
+    zip.finish().map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+    
+    debug!("Exported SVG zip to {:?}", path_buf);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn export_png<R: Runtime>(
+    window: tauri::WebviewWindow<R>,
+    project_manager: tauri::State<'_, Arc<ProjectManager<R>>>,
+    path: String,
+) -> Result<()> {
+    let project = project_manager
+        .get_project(&window)
+        .ok_or(Error::UnknownProject)?;
+
+    let cache = project.cache.read().unwrap();
+    let doc = cache.document.as_ref().ok_or(Error::Unknown)?;
+
+    let mut path_buf = PathBuf::from(&path);
+    if path_buf.extension().is_none() {
+        path_buf.set_extension("zip");
+    }
+
+    let file = std::fs::File::create(&path_buf).map_err(Into::<Error>::into)?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::FileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored);
+
+    let ppi = 144.0;
+    let scale = ppi / 72.0;
+
+    for (i, page) in doc.pages.iter().enumerate() {
+        let pixmap = typst_render::render(page, scale);
+        let filename = format!("page_{:02}.png", i + 1);
+        zip.start_file(filename, options).map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        
+        // Encoding directly
+        // create a temporary encoder to write to buffer? 
+        // pixmap.save_png is convenient but writes to path.
+        // We can encode using the png crate or just use an intermediate buffer if pixmap exposes raw bytes.
+        // pixmap.encode_png() returns Result<Vec<u8>> in recent versions? 
+        // checking typst_render usage... it returns a Pixmap.
+        // Pixmap has encode_png().
+        if let Ok(data) = pixmap.encode_png() {
+             use std::io::Write;
+             zip.write_all(&data).map_err(Into::<Error>::into)?;
+        } else {
+             return Err(Error::Unknown);
+        }
+    }
+    
+    zip.finish().map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+    
+    debug!("Exported PNG zip to {:?}", path_buf);
+    Ok(())
+}
+
+#[derive(serde::Deserialize)]
+pub struct RecentProjectInfo {
+    path: String,
+    name: String,
+}
+
+#[tauri::command]
+pub async fn update_recent_menu<R: Runtime>(
+    window: tauri::WebviewWindow<R>,
+    projects: Vec<RecentProjectInfo>,
+) -> Result<()> {
+    use tauri::Manager;
+    use crate::menu::{build_menu, RecentProject};
+    
+    let recent_projects: Vec<RecentProject> = projects.into_iter().map(|p| RecentProject {
+        name: p.name,
+        path: p.path,
+    }).collect();
+    
+    let menu = build_menu(window.app_handle(), &recent_projects).map_err(|e| Error::Unknown)?;
+    if let Some(main_window) = window.app_handle().get_webview_window("main") {
+        let _ = main_window.set_menu(menu);
+    }
     Ok(())
 }

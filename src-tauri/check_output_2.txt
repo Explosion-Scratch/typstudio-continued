@@ -1,0 +1,348 @@
+    Checking wry v0.53.5
+    Checking tauri-runtime v2.9.2
+    Checking typst-svg v0.14.2
+    Checking typst-layout v0.14.2
+    Checking typst-eval v0.14.2
+    Checking typst-realize v0.14.2
+    Checking krilla-svg v0.3.0
+    Checking typst-render v0.14.2
+    Checking typst-pdf v0.14.2
+   Compiling typstudio v0.1.0 (/Users/tjs/Documents/.coding/repos/typstudio/src-tauri)
+    Checking chrono v0.4.42
+    Checking dirs v5.0.1
+    Checking typst-html v0.14.2
+    Checking arboard v3.6.1
+    Checking elsa v1.11.2
+    Checking hex v0.4.3
+    Checking tauri-runtime-wry v2.9.3
+    Checking opener v0.7.2
+    Checking tauri v2.9.5
+    Checking typst v0.14.2
+    Checking typst-ide v0.14.2
+    Checking tauri-plugin-fs v2.4.5
+    Checking tauri-plugin-shell v2.3.4
+    Checking tauri-plugin-opener v2.5.3
+    Checking tauri-plugin-dialog v2.5.0
+warning: unused imports: `CheckMenuItemBuilder`, `IconMenuItemBuilder`, and `MenuItemBuilder`
+ --> src/menu.rs:5:38
+  |
+5 | use tauri::menu::{Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder, MenuEvent, CheckMenuItemBuilder, IconMenuItemBuilder};
+  |                                      ^^^^^^^^^^^^^^^                             ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `tauri_plugin_dialog::FileDialogBuilder`
+ --> src/menu.rs:7:5
+  |
+7 | use tauri_plugin_dialog::FileDialogBuilder;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::menu::handle_menu_event`
+  --> src/main.rs:14:5
+   |
+14 | use crate::menu::handle_menu_event;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no method named `emit` found for struct `tauri::Window<R>` in the current scope
+   --> src/ipc/commands/mod.rs:90:20
+    |
+ 90 |     let _ = window.emit("loading_progress", LoadingProgressEvent {
+    |             -------^^^^
+    |
+   ::: /Users/tjs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.9.5/src/lib.rs:952:6
+    |
+952 |   fn emit<S: Serialize + Clone>(&self, event: &str, payload: S) -> Result<()> {
+    |      ---- the method is available for `tauri::Window<R>` here
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `emit_to` with a similar name, but with different arguments
+   --> /Users/tjs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.9.5/src/lib.rs:987:3
+    |
+987 | /   fn emit_to<I, S>(&self, target: I, event: &str, payload: S) -> Result<()>
+988 | |   where
+989 | |     I: Into<EventTarget>,
+990 | |     S: Serialize + Clone,
+    | |_________________________^
+help: trait `Emitter` which provides `emit` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use tauri::Emitter;
+    |
+
+error[E0599]: no method named `emit` found for struct `tauri::Window<R>` in the current scope
+   --> src/ipc/commands/mod.rs:101:20
+    |
+101 |     let _ = window.emit("loading_progress", LoadingProgressEvent {
+    |             -------^^^^
+    |
+   ::: /Users/tjs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.9.5/src/lib.rs:952:6
+    |
+952 |   fn emit<S: Serialize + Clone>(&self, event: &str, payload: S) -> Result<()> {
+    |      ---- the method is available for `tauri::Window<R>` here
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `emit_to` with a similar name, but with different arguments
+   --> /Users/tjs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.9.5/src/lib.rs:987:3
+    |
+987 | /   fn emit_to<I, S>(&self, target: I, event: &str, payload: S) -> Result<()>
+988 | |   where
+989 | |     I: Into<EventTarget>,
+990 | |     S: Serialize + Clone,
+    | |_________________________^
+help: trait `Emitter` which provides `emit` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use tauri::Emitter;
+    |
+
+error[E0599]: no method named `emit` found for struct `tauri::Window<R>` in the current scope
+   --> src/ipc/commands/mod.rs:111:20
+    |
+111 |     let _ = window.emit("loading_progress", LoadingProgressEvent {
+    |             -------^^^^
+    |
+   ::: /Users/tjs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.9.5/src/lib.rs:952:6
+    |
+952 |   fn emit<S: Serialize + Clone>(&self, event: &str, payload: S) -> Result<()> {
+    |      ---- the method is available for `tauri::Window<R>` here
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `emit_to` with a similar name, but with different arguments
+   --> /Users/tjs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.9.5/src/lib.rs:987:3
+    |
+987 | /   fn emit_to<I, S>(&self, target: I, event: &str, payload: S) -> Result<()>
+988 | |   where
+989 | |     I: Into<EventTarget>,
+990 | |     S: Serialize + Clone,
+    | |_________________________^
+help: trait `Emitter` which provides `emit` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use tauri::Emitter;
+    |
+
+error[E0599]: no method named `emit` found for struct `tauri::Window<R>` in the current scope
+   --> src/ipc/commands/mod.rs:121:20
+    |
+121 |     let _ = window.emit("loading_progress", LoadingProgressEvent {
+    |             -------^^^^
+    |
+   ::: /Users/tjs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.9.5/src/lib.rs:952:6
+    |
+952 |   fn emit<S: Serialize + Clone>(&self, event: &str, payload: S) -> Result<()> {
+    |      ---- the method is available for `tauri::Window<R>` here
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `emit_to` with a similar name, but with different arguments
+   --> /Users/tjs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.9.5/src/lib.rs:987:3
+    |
+987 | /   fn emit_to<I, S>(&self, target: I, event: &str, payload: S) -> Result<()>
+988 | |   where
+989 | |     I: Into<EventTarget>,
+990 | |     S: Serialize + Clone,
+    | |_________________________^
+help: trait `Emitter` which provides `emit` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use tauri::Emitter;
+    |
+
+error[E0599]: no method named `get_window` found for struct `AppHandle<R>` in the current scope
+  --> src/compiler/service.rs:64:38
+   |
+64 |                     let window = app.get_window(&req.window_label);
+   |                                      ^^^^^^^^^^
+   |
+help: there is a method `get_webview_window` with a similar name
+   |
+64 |                     let window = app.get_webview_window(&req.window_label);
+   |                                           ++++++++
+
+error[E0599]: no method named `emit` found for reference `&tauri::Window<R>` in the current scope
+   --> src/ipc/events.rs:14:50
+    |
+ 14 |         BackendEvent::Compile(payload) => window.emit("typst_compile", payload),
+    |                                                  ^^^^
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `emit_to` with a similar name, but with different arguments
+   --> /Users/tjs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.9.5/src/lib.rs:987:3
+    |
+987 | /   fn emit_to<I, S>(&self, target: I, event: &str, payload: S) -> Result<()>
+988 | |   where
+989 | |     I: Into<EventTarget>,
+990 | |     S: Serialize + Clone,
+    | |_________________________^
+help: trait `Emitter` which provides `emit` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use tauri::Emitter;
+    |
+
+error[E0599]: no method named `emit` found for reference `&tauri::Window<R>` in the current scope
+   --> src/ipc/events.rs:17:20
+    |
+ 17 |     let _ = window.emit("backend_event", event);
+    |                    ^^^^
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `emit_to` with a similar name, but with different arguments
+   --> /Users/tjs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.9.5/src/lib.rs:987:3
+    |
+987 | /   fn emit_to<I, S>(&self, target: I, event: &str, payload: S) -> Result<()>
+988 | |   where
+989 | |     I: Into<EventTarget>,
+990 | |     S: Serialize + Clone,
+    | |_________________________^
+help: trait `Emitter` which provides `emit` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use tauri::Emitter;
+    |
+
+error[E0308]: mismatched types
+   --> src/menu.rs:130:58
+    |
+130 | ...                   project_manager.set_project(&w, Some(project));
+    |                                       ----------- ^^ expected `&Window<R>`, found `&WebviewWindow<R>`
+    |                                       |
+    |                                       arguments to this method are incorrect
+    |
+    = note: expected reference `&tauri::Window<R>`
+               found reference `&tauri::WebviewWindow<R>`
+note: method defined here
+   --> src/project/manager.rs:61:12
+    |
+ 61 |     pub fn set_project(&self, window: &Window<R>, project: Option<Arc<Project>>) {
+    |            ^^^^^^^^^^^        ------------------
+
+error[E0599]: no method named `dialog` found for reference `&AppHandle<R>` in the current scope
+   --> src/menu.rs:140:18
+    |
+140 |              app.dialog().file().set_title("Open Project").pick_folder(move |path| {
+    |                  ^^^^^^ method not found in `&AppHandle<R>`
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `DialogExt` which provides `dialog` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use tauri_plugin_dialog::DialogExt;
+    |
+
+error[E0282]: type annotations needed for `std::option::Option<_>`
+   --> src/menu.rs:140:78
+    |
+140 |              app.dialog().file().set_title("Open Project").pick_folder(move |path| {
+    |                                                                              ^^^^
+...
+144 |                       let path = path.into_path_buf(); // verify API
+    |                                  ---- type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type, where the placeholders `_` are specified
+    |
+140 |              app.dialog().file().set_title("Open Project").pick_folder(move |path: std::option::Option<_>| {
+    |                                                                                  ++++++++++++++++++++++++
+
+error[E0308]: mismatched types
+   --> src/menu.rs:148:51
+    |
+148 |                       project_manager.set_project(&window_clone, Some(project));
+    |                                       ----------- ^^^^^^^^^^^^^ expected `&Window<R>`, found `&WebviewWindow<R>`
+    |                                       |
+    |                                       arguments to this method are incorrect
+    |
+    = note: expected reference `&tauri::Window<R>`
+               found reference `&tauri::WebviewWindow<R>`
+note: method defined here
+   --> src/project/manager.rs:61:12
+    |
+ 61 |     pub fn set_project(&self, window: &Window<R>, project: Option<Arc<Project>>) {
+    |            ^^^^^^^^^^^        ------------------
+
+error[E0308]: mismatched types
+   --> src/menu.rs:156:42
+    |
+156 |              project_manager.set_project(&window, None);
+    |                              ----------- ^^^^^^^ expected `&Window<R>`, found `&WebviewWindow<R>`
+    |                              |
+    |                              arguments to this method are incorrect
+    |
+    = note: expected reference `&tauri::Window<R>`
+               found reference `&tauri::WebviewWindow<R>`
+note: method defined here
+   --> src/project/manager.rs:61:12
+    |
+ 61 |     pub fn set_project(&self, window: &Window<R>, project: Option<Arc<Project>>) {
+    |            ^^^^^^^^^^^        ------------------
+
+warning: use of deprecated method `tauri_plugin_shell::Shell::<R>::open`: Use tauri-plugin-opener instead.
+   --> src/menu.rs:170:34
+    |
+170 |              let _ = app.shell().open("https://typst.app/docs/", None);
+    |                                  ^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated method `tauri_plugin_shell::Shell::<R>::open`: Use tauri-plugin-opener instead.
+   --> src/menu.rs:173:34
+    |
+173 |              let _ = app.shell().open("https://github.com/Cubxity/typstudio", None);
+    |                                  ^^^^
+
+error[E0599]: no method named `emit` found for reference `&tauri::Window<R>` in the current scope
+   --> src/project/manager.rs:92:24
+    |
+ 92 |         let _ = window.emit("project_changed", ProjectChangeEvent { project: model });
+    |                        ^^^^
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `emit_to` with a similar name, but with different arguments
+   --> /Users/tjs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.9.5/src/lib.rs:987:3
+    |
+987 | /   fn emit_to<I, S>(&self, target: I, event: &str, payload: S) -> Result<()>
+988 | |   where
+989 | |     I: Into<EventTarget>,
+990 | |     S: Serialize + Clone,
+    | |_________________________^
+help: trait `Emitter` which provides `emit` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use tauri::Emitter;
+    |
+
+error[E0599]: no method named `emit` found for reference `&tauri::Window<R>` in the current scope
+   --> src/project/manager.rs:142:36
+    |
+142 |                     let _ = window.emit("fs_refresh", &event);
+    |                                    ^^^^
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: there is a method `emit_to` with a similar name, but with different arguments
+   --> /Users/tjs/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-2.9.5/src/lib.rs:987:3
+    |
+987 | /   fn emit_to<I, S>(&self, target: I, event: &str, payload: S) -> Result<()>
+988 | |   where
+989 | |     I: Into<EventTarget>,
+990 | |     S: Serialize + Clone,
+    | |_________________________^
+help: trait `Emitter` which provides `emit` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use tauri::Emitter;
+    |
+
+warning: unused import: `Manager`
+  --> src/compiler/service.rs:12:13
+   |
+12 | use tauri::{Manager, Runtime};
+   |             ^^^^^^^
+
+warning: unused import: `Manager`
+  --> src/ipc/commands/typst.rs:11:22
+   |
+11 | use tauri::{Runtime, Manager};
+   |                      ^^^^^^^
+
+warning: unused variable: `e`
+   --> src/ipc/commands/typst.rs:670:75
+    |
+670 |     let menu = build_menu(window.app_handle(), &recent_projects).map_err(|e| Error::Unknown)?;
+    |                                                                           ^ help: if this is intentional, prefix it with an underscore: `_e`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+Some errors have detailed explanations: E0282, E0308, E0599.
+For more information about an error, try `rustc --explain E0282`.
+warning: `typstudio` (bin "typstudio") generated 8 warnings
+error: could not compile `typstudio` (bin "typstudio") due to 14 previous errors; 8 warnings emitted

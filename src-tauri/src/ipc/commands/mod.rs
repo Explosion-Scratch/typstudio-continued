@@ -14,7 +14,7 @@ use serde::{Serialize, Serializer};
 use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
-use tauri::{Runtime, State, Window};
+use tauri::{Runtime, State, WebviewWindow, Emitter};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -44,7 +44,7 @@ impl Serialize for Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub fn project<R: Runtime>(
-    window: &Window<R>,
+    window: &WebviewWindow<R>,
     project_manager: &State<Arc<ProjectManager<R>>>,
 ) -> Result<Arc<Project>> {
     project_manager
@@ -53,7 +53,7 @@ pub fn project<R: Runtime>(
 }
 
 pub fn project_path<R: Runtime, P: AsRef<Path>>(
-    window: &Window<R>,
+    window: &WebviewWindow<R>,
     project_manager: &State<Arc<ProjectManager<R>>>,
     path: P,
 ) -> Result<(Arc<Project>, PathBuf)> {
@@ -81,7 +81,7 @@ pub fn project_path<R: Runtime, P: AsRef<Path>>(
 
 #[tauri::command]
 pub async fn open_project<R: Runtime>(
-    window: Window<R>,
+    window: WebviewWindow<R>,
     project_manager: State<'_, Arc<ProjectManager<R>>>,
     path: String,
 ) -> Result<()> {
