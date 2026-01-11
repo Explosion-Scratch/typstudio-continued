@@ -8,7 +8,7 @@
   import { jump } from "../lib/ipc";
   import { appWindow } from "@tauri-apps/api/window";
   import { shell, PreviewState } from "$lib/stores";
-  import { fade } from "svelte/transition";
+
 
   let container: HTMLDivElement;
   let pagesContainer: HTMLDivElement;
@@ -26,13 +26,11 @@
 
   let pages = 0;
   let hash: string | null = null;
-  let previousHash: string | null = null;
   let width: number;
   let height: number;
   let currentErrors: TypstSourceDiagnostic[] = [];
 
   let isVisible: boolean = true;
-  let isFading = false;
 
   const handleMouseDown = (event: MouseEvent) => {
     if (event.button === 0) {
@@ -157,12 +155,7 @@
         "typst_compile",
         ({ payload }) => {
           console.log("[Preview] typst_compile event received", payload);
-          // @ts-ignore
-          if (payload.event && payload.payload) {
-             console.log("[Preview] Unwrapping payload", payload.payload);
-             // handle the double wrapped case if that's what's happening
-             // But for now just log it
-          }
+
           const { document, diagnostics } = payload;
           console.log("[Preview] Destructured:", { document, diagnostics });
 
@@ -170,18 +163,10 @@
           shell.setCurrentErrors(currentErrors);
 
           if (document) {
-            previousHash = hash;
             pages = document.pages;
             hash = document.hash;
             width = document.width;
             height = document.height;
-
-            if (previousHash && previousHash !== hash) {
-              isFading = true;
-              setTimeout(() => {
-                isFading = false;
-              }, 150);
-            }
           }
         }
       );
@@ -257,7 +242,6 @@
       <div
         bind:this={pagesContainer}
         class="pages-wrapper"
-        class:fading={isFading}
       >
         {#each Array(pages) as _, i}
           {#if hash}
@@ -313,12 +297,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-lg);
-    transition: opacity 150ms ease;
     position: relative;
-  }
-
-  .pages-wrapper.fading {
-    opacity: 0.7;
   }
 
   .flash-marker {
