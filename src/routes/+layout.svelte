@@ -8,12 +8,17 @@
 
   $effect(() => {
     const projects = $recentProjects;
-    const is_project_open = !!$project;
-    console.log("[Layout] Updating menu state:", { project_count: projects.length, is_project_open });
-    invoke("update_menu_state", { projects, is_project_open }).catch(console.error);
+    const isProjectOpen = !!$project;
+    console.log("[Layout] Updating menu state (effect):", { project_count: projects.length, isProjectOpen });
+    invoke("update_menu_state", { projects, isProjectOpen }).catch((e) => console.error("Failed to update menu state:", e));
   });
 
   onMount(async () => {
+    // Force initial update
+    const projects = $recentProjects;
+    const isProjectOpen = !!$project;
+    console.log("[Layout] Updating menu state (mount):", { project_count: projects.length, isProjectOpen });
+    invoke("update_menu_state", { projects, isProjectOpen }).catch((e) => console.error("Failed to update menu state:", e));
     
     // Listen for export menu events
     const { listen } = await import("@tauri-apps/api/event");
@@ -58,6 +63,48 @@
     
     await listen("menu_clear_recent", () => {
         recentProjects.clear();
+    });
+
+    await listen("menu_new_file", () => {
+        if (!$project) return;
+        shell.createModal({
+            type: "input",
+            title: "New File",
+            placeholder: "filename.typ",
+            callback: async (filename) => {
+                if (!filename) return;
+                try {
+                    // Use invoke("fs_create_file") or imported createFile if available in context, 
+                    // but prefer invoke for raw simplicity if not imported.
+                    // However, we can dynamically import or just use invoke.
+                    // To keep it simple and consistent with other event handlers here:
+                    const { createFile, listDir } = await import("$lib/ipc");
+                    
+                    // Determine where to put the file? 
+                    // Usually relative to selected file or root.
+                    // For now, let's just put it in root or relative to current selection if possible?
+                    // shell.selectedFile gives absolute path.
+                    // Let's default to root for now if no selection, or parent of selected.
+                    
+                    let parent = "/";
+                    const selected = $shell.selectedFile;
+                    if (selected) {
+                        const parts = selected.split("/");
+                        parts.pop();
+                        parent = parts.join("/");
+                        if (!parent) parent = "/";
+                    }
+                    
+                    const path = parent === "/" ? `/${filename}` : `${parent}/${filename}`;
+                    await createFile(path);
+                    
+                    // Select the new file
+                    shell.selectFile(path);
+                } catch (e) {
+                    console.error("Failed to create file:", e);
+                }
+            }
+        });
     });
   });
 </script>

@@ -652,6 +652,8 @@ pub async fn export_png<R: Runtime>(
 pub struct RecentProjectInfo {
     path: String,
     name: String,
+    #[serde(default)]
+    _last_opened: Option<u64>,
 }
 
 #[tauri::command]
@@ -670,7 +672,18 @@ pub async fn update_menu_state<R: Runtime>(
     
     log::info!("Updating menu state: is_project_open={}, recent_projects_count={}", is_project_open, recent_projects.len());
     
-    let menu = build_menu(window.app_handle(), &recent_projects, is_project_open).map_err(|_| Error::Unknown)?;
-    let _ = window.app_handle().set_menu(menu);
+    match build_menu(window.app_handle(), &recent_projects, is_project_open) {
+        Ok(menu) => {
+            if let Err(e) = window.app_handle().set_menu(menu) {
+                log::error!("Failed to set app menu: {}", e);
+                return Err(Error::Unknown);
+            }
+            log::info!("Menu updated successfully");
+        }
+        Err(e) => {
+            log::error!("Failed to build menu: {}", e);
+            return Err(Error::Unknown);
+        }
+    }
     Ok(())
 }

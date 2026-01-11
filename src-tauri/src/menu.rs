@@ -52,19 +52,36 @@ pub fn build_menu<R: Runtime>(handle: &AppHandle<R>, recent_projects: &[RecentPr
         .item(&MenuItemBuilder::with_id("file_export_png", "Export as PNG (Zip)...").enabled(is_project_open).build(handle)?)
         .build()?;
 
-    let file_menu = SubmenuBuilder::new(handle, "File")
-        .text("file_new_project", "New Project")
-        .text("file_open_project", "Open Project...")
-        .item(&recent_sub)
-        .separator()
-        .item(&MenuItemBuilder::with_id("file_save", "Save").enabled(is_project_open).build(handle)?)
-        .item(&MenuItemBuilder::with_id("file_save_all", "Save All").enabled(is_project_open).build(handle)?)
-        .separator()
-        .item(&export_menu)
-        .separator()
-        .item(&MenuItemBuilder::with_id("file_close_project", "Close Project").enabled(is_project_open).build(handle)?)
-        .quit()
-        .build()?;
+    let file_menu = if is_project_open {
+         SubmenuBuilder::new(handle, "File")
+            .item(&MenuItemBuilder::with_id("file_new_file", "New File").accelerator("CmdOrCtrl+N").build(handle)?)
+            .text("file_new_project", "New Project")
+            .item(&MenuItemBuilder::with_id("file_open_project", "Open Project...").accelerator("CmdOrCtrl+O").build(handle)?)
+            .item(&recent_sub)
+            .separator()
+            .item(&MenuItemBuilder::with_id("file_save", "Save").accelerator("CmdOrCtrl+S").enabled(is_project_open).build(handle)?)
+            .item(&MenuItemBuilder::with_id("file_save_all", "Save All").enabled(is_project_open).build(handle)?)
+            .separator()
+            .item(&export_menu)
+            .separator()
+            .item(&MenuItemBuilder::with_id("file_close_project", "Close Project").enabled(is_project_open).build(handle)?)
+            .quit()
+            .build()?
+    } else {
+         SubmenuBuilder::new(handle, "File")
+            .item(&MenuItemBuilder::with_id("file_new_project", "New Project").accelerator("CmdOrCtrl+N").build(handle)?)
+            .item(&MenuItemBuilder::with_id("file_open_project", "Open Project...").accelerator("CmdOrCtrl+O").build(handle)?)
+            .item(&recent_sub)
+            .separator()
+            .item(&MenuItemBuilder::with_id("file_save", "Save").enabled(false).build(handle)?)
+            .item(&MenuItemBuilder::with_id("file_save_all", "Save All").enabled(false).build(handle)?)
+            .separator()
+            .item(&export_menu)
+            .separator()
+            .item(&MenuItemBuilder::with_id("file_close_project", "Close Project").enabled(false).build(handle)?)
+            .quit()
+            .build()?
+    };
 
     let edit_menu = SubmenuBuilder::new(handle, "Edit")
         .undo()
@@ -78,7 +95,7 @@ pub fn build_menu<R: Runtime>(handle: &AppHandle<R>, recent_projects: &[RecentPr
 
     let view_menu = SubmenuBuilder::new(handle, "View")
         .item(&MenuItemBuilder::with_id("view_toggle_sidebar", "Toggle Sidebar").accelerator("CmdOrCtrl+B").enabled(is_project_open).build(handle)?)
-        .item(&MenuItemBuilder::with_id("view_toggle_preview", "Toggle Preview").accelerator("CmdOrCtrl+Enter").enabled(is_project_open).build(handle)?)
+        .item(&MenuItemBuilder::with_id("view_toggle_preview", "Toggle Preview").accelerator("CmdOrCtrl+\\").enabled(is_project_open).build(handle)?)
         .separator()
         .fullscreen()
         .build()?;
@@ -107,11 +124,20 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
     // But we are setting app-wide menu.
     // We can get the main window from app handle.
     
-    let window = app.get_webview_window("main");
-    if window.is_none() { return; }
+    // Use the first available window if "main" is not found
+    let window = app.get_webview_window("main")
+        .or_else(|| app.webview_windows().values().next().cloned());
+
+    if window.is_none() { 
+        log::warn!("No window found for menu event");
+        return; 
+    }
     let window = window.unwrap();
 
     match id {
+        "file_new_file" => {
+            let _ = window.emit("menu_new_file", ());
+        }
         "file_new_project" => {
             let app_handle = app.clone();
             tauri::async_runtime::spawn(async move {
@@ -123,7 +149,10 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
                          let path = fs::canonicalize(&path).unwrap_or(PathBuf::from(path));
                           let project = Arc::new(Project::load_from_path(path, None));
                          let project_manager: State<'_, Arc<ProjectManager<R>>> = app_handle.state();
-                         if let Some(w) = app_handle.get_webview_window("main") {
+                         let w = app_handle.get_webview_window("main")
+                             .or_else(|| app_handle.webview_windows().values().next().cloned());
+                         
+                         if let Some(w) = w {
                              project_manager.set_project(&w, Some(project));
                          }
                     }
