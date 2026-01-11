@@ -542,6 +542,7 @@
     justify-content: center;
     z-index: 100;
     user-select: none;
+    border-bottom: 1px solid var(--color-border);
   }
 
   .title-button {

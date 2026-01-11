@@ -8,10 +8,11 @@ export interface Project {
 export const project = writable<Project | null>(null);
 
 export interface OutlineItem {
-  type: "heading" | "figure" | "table" | "list";
+  type: "heading" | "figure" | "table" | "list" | "include";
   level: number;
   title: string;
   line: number;
+  endLine: number;
 }
 
 export type SidebarTab = "files" | "outline" | "packages";

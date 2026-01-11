@@ -1,12 +1,21 @@
 <script lang="ts">
   import { shell, type OutlineItem } from "$lib/stores";
-  import { TextH, ImageIcon, Table, List, CaretRight, CaretDown, MagnifyingGlass } from "$lib/icons";
+  import { TextH, ImageIcon, Table, List, CaretRight, CaretDown, MagnifyingGlass, Trash, Export, Link } from "$lib/icons";
   import { appWindow } from "@tauri-apps/api/window";
+  import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
+  import { writeFileText } from "$lib/ipc";
 
   export let outline: OutlineItem[] = [];
 
   let searchQuery = "";
   let collapsedItems: Set<string> = new Set();
+  
+  let menuProps = {
+    show: false,
+    x: 0,
+    y: 0,
+    items: [] as ContextMenuItem[]
+  };
 
   const getItemId = (item: OutlineItem) => `${item.line}-${item.level}-${item.title}`;
 
@@ -20,6 +29,8 @@
         return Table;
       case "list":
         return List;
+      case "include":
+        return Link;
       default:
         return TextH;
     }
@@ -27,6 +38,50 @@
 
   const handleItemClick = (line: number) => {
     appWindow.emit("jump_to_position", { line, column: 1 });
+  };
+
+  const handleContextMenu = (event: MouseEvent, item: OutlineItem) => {
+    event.preventDefault();
+    
+    const items: ContextMenuItem[] = [
+      {
+        label: "Delete",
+        icon: Trash,
+        action: () => {
+          appWindow.emit("delete_range", { startLine: item.line, endLine: item.endLine });
+        }
+      },
+      {
+        label: "Extract to new file",
+        icon: Export,
+        action: () => {
+          shell.createModal({
+            type: "input",
+            title: "Extract to new file",
+            placeholder: "filename.typ",
+            callback: async (filename) => {
+              if (filename) {
+                if (!filename.endsWith(".typ")) filename += ".typ";
+                
+                appWindow.emit("extract_section", { 
+                  startLine: item.line, 
+                  endLine: item.endLine, 
+                  filename 
+                });
+              }
+              shell.popModal();
+            }
+          });
+        }
+      }
+    ];
+
+    menuProps = {
+      show: true,
+      x: event.clientX,
+      y: event.clientY,
+      items
+    };
   };
 
   const toggleItem = (item: OutlineItem) => {
@@ -146,6 +201,7 @@
           class:parent-item={isParent}
           style="padding-left: {12 + (item.level - 1) * 12}px"
           on:click={() => handleItemClick(item.line)}
+          on:contextmenu={(e) => handleContextMenu(e, item)}
         >
           {#if item.type === "heading" && hasChildren(item, outline) && !searchQuery.trim()}
             <span
@@ -176,6 +232,15 @@
     </div>
   {/if}
 </div>
+
+{#if menuProps.show}
+  <ContextMenu
+    x={menuProps.x}
+    y={menuProps.y}
+    items={menuProps.items}
+    on:close={() => (menuProps.show = false)}
+  />
+{/if}
 
 <style>
   .document-outline {
@@ -240,6 +305,8 @@
   }
 
   .outline-item {
+    user-select: none;
+    -webkit-user-select: none;
     display: flex;
     align-items: center;
     gap: var(--space-xs);

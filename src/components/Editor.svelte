@@ -294,6 +294,81 @@
         handleCompile();
       });
       cleanup.push(unsubscribeTriggerCompile);
+
+      const unsubscribeReplaceRange = await appWindow.listen<{ startLine: number; endLine: number; text: string }>("replace_range", ({ payload }) => {
+        if (editorInstance) {
+          const model = editorInstance.getModel();
+          if (model) {
+            const range = {
+              startLineNumber: payload.startLine,
+              startColumn: 1,
+              endLineNumber: payload.endLine,
+              endColumn: model.getLineMaxColumn(payload.endLine)
+            };
+            model.pushEditOperations(
+              [],
+              [{ range: range, text: payload.text }],
+              () => null
+            );
+          }
+        }
+      });
+      cleanup.push(unsubscribeReplaceRange);
+
+      const unsubscribeDeleteRange = await appWindow.listen<{ startLine: number; endLine: number }>("delete_range", ({ payload }) => {
+        if (editorInstance) {
+          const model = editorInstance.getModel();
+          if (model) {
+            const range = {
+              startLineNumber: payload.startLine,
+              startColumn: 1,
+              endLineNumber: payload.endLine,
+              endColumn: model.getLineMaxColumn(payload.endLine)
+            };
+            model.pushEditOperations(
+              [],
+              [{ range: range, text: "" }],
+              () => null
+            );
+          }
+        }
+      });
+      cleanup.push(unsubscribeDeleteRange);
+
+      const unsubscribeExtractSection = await appWindow.listen<{ startLine: number; endLine: number; filename: string }>("extract_section", async ({ payload }) => {
+        if (editorInstance) {
+          const model = editorInstance.getModel();
+          if (model) {
+            const range = {
+              startLineNumber: payload.startLine,
+              startColumn: 1,
+              endLineNumber: payload.endLine,
+              endColumn: model.getLineMaxColumn(payload.endLine)
+            };
+            const content = model.getValueInRange(range);
+            
+            // 1. Write the new file
+            // We need to resolve the path. Assume it's in the same directory as the current file.
+            const currentPath = model.uri.path;
+            const parentDir = currentPath.substring(0, currentPath.lastIndexOf("/") + 1);
+            const newFilePath = parentDir + payload.filename;
+            
+            try {
+              await writeFileText(newFilePath, content);
+              
+              // 2. Replace the range with #include
+              model.pushEditOperations(
+                [],
+                [{ range: range, text: `#include "${payload.filename}"` }],
+                () => null
+              );
+            } catch (err) {
+              console.error("Failed to extract section:", err);
+            }
+          }
+        }
+      });
+      cleanup.push(unsubscribeExtractSection);
     })();
 
     return () => {
