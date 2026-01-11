@@ -3,7 +3,7 @@
   import Preview from "../components/Preview.svelte";
   import { project, shell, recentProjects } from "../lib/stores";
   import type { ProjectChangeEvent, TypstJump } from "../lib/ipc";
-  import { listDir } from "../lib/ipc";
+  import { listDir, revealPath } from "../lib/ipc";
   import WelcomeScreen from "../components/WelcomeScreen.svelte";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import { onMount } from "svelte";
@@ -113,6 +113,16 @@
     }
   };
 
+  const handleTitleClick = async () => {
+    if ($project?.root) {
+      try {
+        await revealPath("/");
+      } catch (e) {
+        console.error("Failed to reveal project:", e);
+      }
+    }
+  };
+
   onMount(() => {
     let cleanup: (() => void)[] = [];
 
@@ -124,9 +134,6 @@
       handleWindowResize();
     });
     
-    // We need to poll for contentAreaRef or use an interval/mutation observer 
-    // because it's conditionally rendered. 
-    // Better: just check it every time the project changes or use a reactive statement below.
     const observeContentArea = () => {
       if (contentAreaRef) {
         resizeObserver.observe(contentAreaRef);
@@ -154,6 +161,10 @@
               shell.selectFile("/" + firstTyp.name);
             }
           }
+          
+          setTimeout(() => {
+            appWindow.emit("trigger_compile");
+          }, 100);
         } catch (e) {
           console.error("Failed to list files:", e);
         }
@@ -243,7 +254,9 @@
   <Modals />
 
   <div class="title-bar" data-tauri-drag-region>
-    <span class="title-text">{titleDisplay}</span>
+    <button class="title-button" on:click={handleTitleClick} title="Reveal in Finder">
+      <span class="title-text">{titleDisplay}</span>
+    </button>
   </div>
 
   {#if exportStatus}
@@ -343,12 +356,34 @@
     top: 0;
     left: 0;
     right: 0;
-    height: 28px;
+    height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 100;
-    pointer-events: none;
+  }
+
+  .title-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 12px;
+    height: 22px;
+    border-radius: var(--radius-md);
+    background: transparent;
+    border: 1px solid transparent;
+    transition: all var(--transition-fast);
+    cursor: default;
+    max-width: 60%;
+  }
+
+  .title-button:hover {
+    background: var(--color-bg-hover);
+    border-color: var(--color-border);
+  }
+
+  .title-button:active {
+    background: var(--color-bg-active);
   }
 
   .title-text {
@@ -358,7 +393,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 400px;
     text-align: center;
   }
 
@@ -392,7 +426,7 @@
     display: flex;
     flex: 1;
     min-height: 0;
-    padding-top: 28px;
+    padding-top: 32px;
     position: relative;
   }
 

@@ -37,6 +37,7 @@ env_logger = "0.11"
 dirs = "5.0"
 walkdir = "2.5"
 memmap2 = "0.9"
+opener = { version = "0.7", features = ["reveal"] }
 
 typst = "0.14"
 typst-ide = "0.14"

@@ -1,10 +1,12 @@
 mod clipboard;
 mod fs;
 mod typst;
+mod playground;
 
 pub use self::typst::*;
 pub use clipboard::*;
 pub use fs::*;
+pub use playground::*;
 
 use crate::project::{Project, ProjectManager};
 use ::typst::diag::FileError;
@@ -24,6 +26,8 @@ pub enum Error {
     IO(#[from] io::Error),
     #[error("typst file error occurred")]
     TypstFile(#[from] FileError),
+    #[error("open error occurred")]
+    Open(#[from] opener::OpenError),
     #[error("the provided path does not belong to the project")]
     UnrelatedPath,
 }

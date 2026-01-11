@@ -1,5 +1,6 @@
 use crate::project::{Project, ProjectManager};
 use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::api::dialog::FileDialogBuilder;
 use tauri::api::shell;
@@ -7,18 +8,27 @@ use tauri::{Manager, Runtime, State, WindowMenuEvent};
 
 pub fn handle_menu_event<R: Runtime>(e: WindowMenuEvent<R>) {
     match e.menu_item_id() {
-        "file_new_project" => FileDialogBuilder::new()
-            .set_title("Select folder for new project")
-            .pick_folder(move |path| {
-                if let Some(path) = path {
-                    let path = fs::canonicalize(&path).unwrap_or(path);
-
-                    let window = e.window();
-                    let project_manager: State<'_, Arc<ProjectManager<_>>> = window.state();
-                    let project = Arc::new(Project::load_from_path(path));
-                    project_manager.set_project(window, Some(project));
+        "file_new_project" => {
+            let app_handle = e.window().app_handle();
+            
+            tauri::async_runtime::spawn(async move {
+                use crate::ipc::commands::create_playground;
+                match create_playground().await {
+                    Ok(path) => {
+                        let path = fs::canonicalize(&path).unwrap_or(PathBuf::from(path));
+                        let project = Arc::new(Project::load_from_path(path));
+                        let project_manager: State<'_, Arc<ProjectManager<R>>> = app_handle.state();
+                        
+                        if let Some(window) = app_handle.get_window("main") {
+                            project_manager.set_project(&window, Some(project));
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to create playground project: {:?}", e);
+                    }
                 }
-            }),
+            });
+        }
         "file_open_project" => FileDialogBuilder::new()
             .set_title("Open Project")
             .pick_folder(move |path| {

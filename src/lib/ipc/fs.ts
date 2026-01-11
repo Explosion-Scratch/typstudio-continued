@@ -37,3 +37,6 @@ export const deleteFile = (path: string): Promise<void> =>
 export const renameFile = (oldPath: string, newPath: string): Promise<void> =>
   invoke("fs_rename_file", { oldPath, newPath });
 
+export const revealPath = (path: string): Promise<void> =>
+  invoke("fs_reveal_path", { path });
+

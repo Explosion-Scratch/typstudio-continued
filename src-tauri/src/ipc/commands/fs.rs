@@ -170,4 +170,15 @@ pub async fn fs_rename_file<R: Runtime>(
     fs::rename(&old_abs, &new_abs).map_err(Into::<Error>::into)?;
     Ok(())
 }
+#[tauri::command]
+pub async fn fs_reveal_path<R: Runtime>(
+    window: Window<R>,
+    project_manager: State<'_, Arc<ProjectManager<R>>>,
+    path: PathBuf,
+) -> Result<()> {
+    let (_, abs_path) = project_path(&window, &project_manager, path)?;
+    
+    opener::reveal(abs_path).map_err(Into::<Error>::into)?;
 
+    Ok(())
+}

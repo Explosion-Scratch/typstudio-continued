@@ -26,9 +26,15 @@
 
   let pages = 0;
   let hash: string | null = null;
-  let width: number;
-  let height: number;
+  let width: number = 0;
+  let height: number = 0;
+  let containerWidth: number = 0;
   let currentErrors: TypstSourceDiagnostic[] = [];
+
+  $: padding = 48; // var(--space-xl) * 2 roughly
+  $: effectiveScale = width > 0 && containerWidth > 0 
+    ? ((containerWidth - padding) / width) * zoom 
+    : zoom;
 
   let isVisible: boolean = true;
 
@@ -69,8 +75,8 @@
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
 
-    const ptX = x / zoom;
-    const ptY = y / zoom;
+    const ptX = x / effectiveScale;
+    const ptY = y / effectiveScale;
 
     const result = await jump(pageIndex, ptX, ptY);
     if (result && result.start) {
@@ -189,8 +195,8 @@
             const pageRect = pageElement.getBoundingClientRect();
             const containerRect = container.getBoundingClientRect();
 
-            const pixelX = payload.x * zoom;
-            const pixelY = payload.y * zoom;
+            const pixelX = payload.x * effectiveScale;
+            const pixelY = payload.y * effectiveScale;
 
             const absolutePageTop = pageRect.top - containerRect.top + container.scrollTop;
             const absolutePageLeft = pageRect.left - containerRect.left + container.scrollLeft;
@@ -214,11 +220,20 @@
       cleanup.push(unsubscribeScrollToPos);
     })();
 
-    window.addEventListener("keydown", handleKeyDown);
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (let entry of entries) {
+        containerWidth = entry.contentRect.width;
+      }
+    });
+
+    if (container) {
+      resizeObserver.observe(container);
+    }
 
     return () => {
       cleanup.forEach((fn) => fn());
       window.removeEventListener("keydown", handleKeyDown);
+      resizeObserver.disconnect();
     };
   });
 </script>
@@ -248,9 +263,9 @@
             <PreviewPage
               page={i}
               hash={hash}
-              width={Math.floor(width * zoom)}
-              height={Math.floor(height * zoom)}
-              scale={zoom}
+              width={Math.floor(width * effectiveScale)}
+              height={Math.floor(height * effectiveScale)}
+              scale={effectiveScale}
             />
           {/if}
         {/each}

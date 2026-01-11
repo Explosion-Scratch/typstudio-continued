@@ -28,7 +28,6 @@ async fn main() {
     if let Ok(watcher) = ProjectManager::init_watcher(project_manager.clone()) {
         project_manager.set_watcher(watcher);
     }
-
     tauri::Builder::default()
         .menu(build_menu())
         .on_menu_event(handle_menu_event)
@@ -47,6 +46,7 @@ async fn main() {
             ipc::commands::fs_write_file_text,
             ipc::commands::fs_delete_file,
             ipc::commands::fs_rename_file,
+            ipc::commands::fs_reveal_path,
             ipc::commands::typst_compile,
             ipc::commands::typst_render,
             ipc::commands::typst_autocomplete,
@@ -57,6 +57,7 @@ async fn main() {
             ipc::commands::typst_install_package,
             ipc::commands::clipboard_paste,
             ipc::commands::open_project,
+            ipc::commands::create_playground,
             ipc::commands::export_pdf
         ])
         .run(tauri::generate_context!())

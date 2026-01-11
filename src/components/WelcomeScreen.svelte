@@ -33,22 +33,17 @@
   });
 
   const handleNewProject = async () => {
-    const path = await open({
-      directory: true,
-      multiple: false,
-      title: "Select project folder",
-    });
-
-    if (path && typeof path === "string") {
-      isLoading = true;
-      loadingMessage = "Creating project...";
-      loadingProgress = 0;
-      try {
+    isLoading = true;
+    loadingMessage = "Creating project...";
+    loadingProgress = 0;
+    try {
+      const path = await invoke("create_playground");
+      if (path && typeof path === "string") {
         await invoke("open_project", { path });
-      } catch (e) {
-        console.error("Failed to create project:", e);
-        isLoading = false;
       }
+    } catch (e) {
+      console.error("Failed to create project:", e);
+      isLoading = false;
     }
   };
 
