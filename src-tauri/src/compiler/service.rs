@@ -138,8 +138,12 @@ fn compile_job<R: Runtime>(
     // if we were to access source maps securely, but usually introspection relies on the document + source text which we have.
     drop(world_guard);
 
-    if token.load(Ordering::Relaxed) {
-        debug!("Compilation aborted after typst::compile (request_id: {})", req.request_id);
+    // We only emit results if they are newer than what we last emitted.
+    // This handles the case where multiple jobs are finishing around the same time
+    // and ensures that we show results as they become available while typing.
+    let old_id = project.current_compile_request_id.fetch_max(req.request_id, Ordering::SeqCst);
+    if req.request_id < old_id {
+        debug!("Compilation skipped emission because a newer request ({}) was already emitted (request_id: {})", old_id, req.request_id);
         return;
     }
 
