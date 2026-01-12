@@ -1,11 +1,13 @@
 mod clipboard;
 mod fs;
+mod git;
 mod typst;
 mod playground;
 
 pub use self::typst::*;
 pub use clipboard::*;
 pub use fs::*;
+pub use git::*;
 pub use playground::*;
 
 use crate::project::{Project, ProjectManager};

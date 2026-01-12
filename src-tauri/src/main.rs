@@ -58,6 +58,7 @@ async fn main() {
             ipc::commands::fs_delete_file,
             ipc::commands::fs_rename_file,
             ipc::commands::fs_reveal_path,
+            ipc::commands::git_read_original_file,
             ipc::commands::typst_compile,
             ipc::commands::typst_render,
             ipc::commands::typst_autocomplete,
