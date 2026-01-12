@@ -9,7 +9,6 @@
   import { onMount } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
 
-  
   const appWindow = getCurrentWindow();
   import SidePanel from "../components/SidePanel.svelte";
   import Modals from "../components/ShellModal.svelte";
@@ -166,6 +165,7 @@
 
   const handleExport = async (type: "pdf" | "svg" | "png", filePath?: string) => {
     try {
+      exportStatus = `Preparing ${type.toUpperCase()} export...`;
       const { save } = await import("@tauri-apps/plugin-dialog");
       const { invoke } = await import("@tauri-apps/api/core");
 
@@ -184,16 +184,11 @@
 
       if (savePath) {
         exportStatus = `Exporting ${type.toUpperCase()}...`;
-        await invoke(`export_${type}`, { 
+        await invoke(`export_${type}`, {
           path: savePath,
-          // If filePath is provided, it's a specific file export from context menu.
-          // However, the current backend export commands use the active project's compiled document.
-          // For now we assume we are exporting the active document if no filePath is used, 
-          // but the current backend export_* commands don't take a source file path, they just export the last compiled doc.
-          // So we ignore filePath for now as the backend logic is tied to the current project/world state.
         });
-        exportStatus = null;
       }
+      exportStatus = null;
     } catch (e) {
       console.error(`Failed to export ${type}:`, e);
       exportStatus = null;
@@ -201,7 +196,8 @@
   };
 
   let compileTimer: any;
-  $: if ($shell.previewState === 1) { // Compiling
+  $: if ($shell.previewState === 1) {
+    // Compiling
     if (!compileTimer) {
       compileTimer = setTimeout(() => {
         shell.setIsCompilingLong(true);
@@ -256,7 +252,6 @@
       }
     }
   };
-
 
   const handleExportPdf = () => {
     handlePrintPdf();
@@ -468,7 +463,7 @@
         "loading_progress",
         ({ payload }) => {
           shell.setLoadingStage(payload.message || payload.stage, payload.progress);
-        }
+        },
       )
       .then((unlisten) => {
         cleanup.push(unlisten);
