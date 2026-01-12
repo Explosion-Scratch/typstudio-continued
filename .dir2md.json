@@ -1,0 +1,15 @@
+{
+  "selectedFiles": [
+    "src/components/Editor.svelte",
+    "src-tauri/src/ipc/commands/git.rs",
+    "src/lib/ipc/git.ts",
+    "src/lib/ipc/index.ts",
+    "src/lib/ipc/fs.ts",
+    "src/lib/ipc/typst.ts",
+    "src-tauri/src/main.rs",
+    "src/lib/editor/diff.ts"
+  ],
+  "timestamp": "2026-01-12T16:07:01.337Z",
+  "cwd": "/Users/tjs/Documents/.coding/repos/typstudio",
+  "prompt": ""
+}

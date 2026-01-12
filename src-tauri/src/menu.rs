@@ -96,6 +96,7 @@ pub fn build_menu<R: Runtime>(handle: &AppHandle<R>, recent_projects: &[RecentPr
     let view_menu = SubmenuBuilder::new(handle, "View")
         .item(&MenuItemBuilder::with_id("view_toggle_sidebar", "Toggle Sidebar").accelerator("CmdOrCtrl+B").enabled(is_project_open).build(handle)?)
         .item(&MenuItemBuilder::with_id("view_toggle_preview", "Toggle Preview").accelerator("CmdOrCtrl+\\").enabled(is_project_open).build(handle)?)
+        .item(&MenuItemBuilder::with_id("view_diff", "View Diff").enabled(is_project_open).build(handle)?)
         .separator()
         .fullscreen()
         .build()?;
@@ -193,6 +194,7 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
         "file_clear_recent" => { let _ = window.emit("menu_clear_recent", ()); }
         "view_toggle_sidebar" => { let _ = window.emit("toggle_sidebar", ()); }
         "view_toggle_preview" => { let _ = window.emit("toggle_preview", ()); }
+        "view_diff" => { let _ = window.emit("menu_view_diff", ()); }
         "packages_install" => { let _ = window.emit("show_install_package", ()); }
         "help_documentation" => {
              let _ = app.opener().open_url("https://typst.app/docs/", None::<&str>);

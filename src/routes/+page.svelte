@@ -24,7 +24,10 @@
     FolderOpenDuotone,
     FolderDuotone,
     Export,
+    GitDiff,
+    ArrowLeft,
   } from "$lib/icons";
+  import { diffStats, showDiffEditor } from "$lib/diff";
 
   let containerWidth = 0;
   let containerRef: HTMLDivElement;
@@ -62,6 +65,8 @@
   $: fileName = $shell.selectedFile?.split("/").pop() || "";
   $: titleDisplay =
     projectName && fileName ? `${projectName} — ${fileName}` : fileName || projectName || "";
+
+  $: hasDiff = $diffStats.added > 0 || $diffStats.removed > 0;
 
   $: availableContentWidth = contentAreaWidth;
   $: canShowBothPanes = availableContentWidth >= MIN_PANE_WIDTH * 2;
@@ -303,6 +308,11 @@
           disabled: !isTypstFile,
         },
         {
+          label: $showDiffEditor ? "Hide Diff" : "Show Diff",
+          icon: GitDiff,
+          action: () => showDiffEditor.update((v) => !v),
+        },
+        {
           label: "",
           action: () => {},
           divider: true,
@@ -477,6 +487,14 @@
         cleanup.push(unlisten);
       });
 
+    appWindow
+      .listen("menu_view_diff", () => {
+        showDiffEditor.update((v) => !v);
+      })
+      .then((unlisten) => {
+        cleanup.push(unlisten);
+      });
+
     window.addEventListener("keydown", handleKeyDown);
     cleanup.push(() => window.removeEventListener("keydown", handleKeyDown));
 
@@ -501,6 +519,23 @@
     >
       <span class="title-text">{titleDisplay}</span>
     </button>
+    {#if hasDiff && $shell.selectedFile}
+      <button
+        class="diff-button"
+        on:click={() => showDiffEditor.update((v) => !v)}
+        on:contextmenu={handleTitleContextMenu}
+        title={$showDiffEditor ? "Hide Diff" : "Show Diff"}
+      >
+        <div class="diff-stats">
+          {#if $diffStats.added > 0}
+            <span class="diff-added">+{ $diffStats.added }</span>
+          {/if}
+          {#if $diffStats.removed > 0}
+            <span class="diff-removed">-{ $diffStats.removed }</span>
+          {/if}
+        </div>
+      </button>
+    {/if}
   </div>
 
   {#if showTitleMenu}
@@ -595,6 +630,17 @@
             />
           </button>
         {/if}
+
+        {#if $showDiffEditor}
+          <button
+              class="diff-back-button"
+              on:click={() => showDiffEditor.set(false)}
+              title="Back to Editor"
+              style={showViewToggle ? "top: 48px;" : "top: 8px;"}
+          >
+               <ArrowLeft size={16} />
+          </button>
+        {/if}
       </div>
     </div>
   {/if}
@@ -648,6 +694,29 @@
     background: var(--color-bg-active);
   }
 
+  .diff-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 8px;
+    height: 22px;
+    border-radius: var(--radius-md);
+    background: transparent;
+    border: 1px solid transparent;
+    transition: all var(--transition-fast);
+    cursor: default;
+    margin-left: 4px;
+  }
+
+  .diff-button:hover {
+    background: var(--color-bg-hover);
+    border-color: var(--color-border);
+  }
+
+  .diff-button:active {
+    background: var(--color-bg-active);
+  }
+
   .title-text {
     font-size: 12px;
     color: var(--color-text-secondary);
@@ -656,6 +725,23 @@
     overflow: hidden;
     text-overflow: ellipsis;
     text-align: center;
+  }
+
+  .diff-stats {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    font-weight: 500;
+  }
+
+  .diff-added {
+    color: var(--color-success);
+  }
+
+  .diff-removed {
+    color: var(--color-error);
   }
 
   .export-overlay {
@@ -772,6 +858,30 @@
 
   .view-toggle:hover {
     background: var(--color-bg-hover);
+    color: var(--color-text-primary);
+  }
+
+  .diff-back-button {
+    position: absolute;
+    right: 12px;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    z-index: 100;
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-fast);
+  }
+
+  .diff-back-button:hover {
+    background: var(--color-bg-hover);
+    transform: translateY(-1px);
     color: var(--color-text-primary);
   }
 </style>

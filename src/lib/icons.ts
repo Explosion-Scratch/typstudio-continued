@@ -40,7 +40,9 @@ import {
   Columns,
   FilePdf,
   FileSvg,
-  FileImage
+  FileImage,
+  ArrowLeft,
+  GitDiff
 } from "phosphor-svelte";
 
 export {
@@ -85,7 +87,9 @@ export {
   Columns,
   FilePdf,
   FileSvg,
-  FileImage
+  FileImage,
+  ArrowLeft,
+  GitDiff
 };
 
 export const ICON_SIZE_SM = 16;

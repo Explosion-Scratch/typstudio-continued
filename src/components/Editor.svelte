@@ -17,16 +17,20 @@
   import { PreviewState, shell, pendingScroll } from "$lib/stores";
   import { extractOutlineFromSource } from "$lib/outline";
   import { getEditorToPreviewTarget, scrollEditorToCenterLine } from "$lib/scroll";
+  import { diffStats, showDiffEditor } from "$lib/diff";
+  import { computeDiffStats } from "$lib/diff-utils";
+  import { ArrowLeft } from "$lib/icons";
 
   type ICodeEditor = editor.ICodeEditor;
   type IDiffEditor = editor.IDiffEditor;
   type IModelContentChangedEvent = editor.IModelContentChangedEvent;
   type IModelChangedEvent = editor.IModelChangedEvent;
   type IMarkerData = editor.IMarkerData;
-  type IRange = editor.IRange;
 
   let divEl: HTMLDivElement;
-  let editorInstance: IDiffEditor;
+  let editorInstance: ICodeEditor | IDiffEditor;
+  let currentModelUri: any;
+  let cachedOriginalContent: string = "";
   const monacoImport = import("monaco-editor");
 
   export let path: string;
@@ -47,7 +51,8 @@
 
 
   const applyMarkers = (diagnostics: TypstSourceDiagnostic[]) => {
-    const model = editorInstance?.getModel()?.modified;
+    // If diff editor, get modified model. If code editor, get model directly.
+    const model = isDiffEditor(editorInstance) ? editorInstance.getModel()?.modified : editorInstance.getModel();
     if (model) {
       import("monaco-editor").then((m) => {
         const markers: IMarkerData[] = diagnostics.map(({ range, severity, message, hints }) => {
@@ -68,7 +73,7 @@
   };
 
   const updateOutline = () => {
-    const model = editorInstance?.getModel()?.modified;
+    const model = isDiffEditor(editorInstance) ? editorInstance.getModel()?.modified : editorInstance.getModel();
     if (model) {
       const content = model.getValue();
       const outline = extractOutlineFromSource(content);
@@ -81,7 +86,7 @@
   const clearMarkersWhileTyping = () => {
     if (!isTyping) {
       isTyping = true;
-      const model = editorInstance?.getModel()?.modified;
+      const model = isDiffEditor(editorInstance) ? editorInstance.getModel()?.modified : editorInstance.getModel();
       if (model) {
         import("monaco-editor").then((m) => {
           m.editor.setModelMarkers(model, "owner", []);
@@ -96,7 +101,7 @@
   }, 300);
 
   const handleCompile = async () => {
-    const model = editorInstance?.getModel()?.modified;
+    const model = isDiffEditor(editorInstance) ? editorInstance.getModel()?.modified : editorInstance.getModel();
     if (model) {
       const filePath = model.uri.path;
       if (!filePath.endsWith(".typ")) return;
@@ -109,20 +114,24 @@
   };
 
   const handleSave = () => {
-    const model = editorInstance.getModel()?.modified;
+    // Return promise to allow awaiting save completion
+    const model = isDiffEditor(editorInstance) ? editorInstance.getModel()?.modified : editorInstance.getModel();
     if (model) {
-      writeFileText(model.uri.path, model.getValue()).then(() => {
+      return writeFileText(model.uri.path, model.getValue()).then(() => {
         // updateGitDecorations(); // Removed, handled natively
       });
     }
+    return Promise.resolve();
   };
 
   const handleSaveDebounce = debounce(handleSave, 1000, { maxWait: 5000 });
 
   const handleCursorJump = debounce(async () => {
     if (editorInstance) {
-      const model = editorInstance.getModel()?.modified;
-      const position = editorInstance.getPosition();
+      // Use type guard directly for narrowing
+      const model = isDiffEditor(editorInstance) ? editorInstance.getModel()?.modified : editorInstance.getModel();
+      const position = isDiffEditor(editorInstance) ? editorInstance.getModifiedEditor().getPosition() : editorInstance.getPosition();
+      
       if (model && position && model.uri.path.endsWith(".typ")) {
         const content = model.getValue();
         const offset = model.getOffsetAt(position);
@@ -154,7 +163,8 @@
   export const scrollToPosition = (line: number, column: number = 1) => {
     if (editorInstance) {
       isJumping = true;
-      scrollEditorToCenterLine(editorInstance.getModifiedEditor(), line, column);
+      const editor = isDiffEditor(editorInstance) ? editorInstance.getModifiedEditor() : editorInstance;
+      scrollEditorToCenterLine(editor, line, column);
       editorInstance.focus();
 
       setTimeout(() => {
@@ -165,8 +175,8 @@
 
   export const getCursorPosition = () => {
     if (editorInstance) {
-      const position = editorInstance.getPosition();
-      const model = editorInstance.getModel()?.modified;
+      const position = isDiffEditor(editorInstance) ? editorInstance.getModifiedEditor().getPosition() : editorInstance.getPosition();
+      const model = isDiffEditor(editorInstance) ? editorInstance.getModel()?.modified : editorInstance.getModel();
       if (position && model) {
         return {
           line: position.lineNumber,
@@ -178,12 +188,18 @@
     return null;
   };
 
+  // Helper to check editor type
+  const isDiffEditor = (e: any): e is IDiffEditor => {
+      return e && typeof e.getModifiedEditor === 'function';
+  }
+
   onMount(() => {
     let cleanup: (() => void)[] = [];
     const syncPreviewFromScroll = async () => {
       if (!editorInstance || isJumping) return;
 
-      const target = await getEditorToPreviewTarget(editorInstance.getModifiedEditor());
+      const editor = isDiffEditor(editorInstance) ? editorInstance.getModifiedEditor() : editorInstance;
+      const target = await getEditorToPreviewTarget(editor);
 
       if (target) {
         if ($shell.viewMode === "editor") {
@@ -199,6 +215,86 @@
     };
 
     const syncPreviewFromScrollDebounced = debounce(syncPreviewFromScroll, 10);
+    
+    // Debounced stats update
+    const updateDiffStatsDebounced = debounce((content: string, original: string) => {
+         const stats = computeDiffStats(original, content);
+         diffStats.set(stats);
+    }, 1000);
+
+    const createEditor = async () => {
+        if (editorInstance) {
+            editorInstance.dispose();
+        }
+        
+        const monaco = await monacoImport;
+        
+        // Common options
+        const options: editor.IStandaloneEditorConstructionOptions = {
+          lineHeight: 1.8,
+          automaticLayout: true,
+          readOnly: false,
+          folding: true,
+          quickSuggestions: false,
+          wordWrap: "on",
+          unicodeHighlight: { ambiguousCharacters: false },
+          padding: { top: 16 },
+          minimap: { enabled: false },
+          fontFamily: "var(--font-mono)",
+          fontSize: 13,
+          renderLineHighlight: "gutter",
+          scrollbar: {
+            vertical: "auto",
+            horizontal: "auto",
+            verticalScrollbarSize: 8,
+            horizontalScrollbarSize: 8,
+          },
+        };
+
+        if ($showDiffEditor) {
+             editorInstance = monaco.editor.createDiffEditor(divEl, {
+                 ...options,
+                 readOnly: false, 
+                 renderSideBySide: false,
+             });
+        } else {
+             editorInstance = monaco.editor.create(divEl, options);
+        }
+        
+        registerListeners(editorInstance);
+        await fetchContent(editorInstance, path);
+    }
+    
+    // Register listeners for either editor type
+    const registerListeners = (instance: ICodeEditor | IDiffEditor) => {
+        const modifiedEditor = isDiffEditor(instance) ? instance.getModifiedEditor() : instance;
+
+        modifiedEditor.onDidChangeModelContent(async () => {
+             // Basic listeners
+             clearMarkersWhileTyping();
+             markTypingDone();
+             handleCompile();
+             handleSaveDebounce();
+             updateOutlineDebounced();
+             
+             // Update diff stats
+             const model = modifiedEditor.getModel();
+             if (model) {
+                 const content = model.getValue();
+                 updateDiffStatsDebounced(content, cachedOriginalContent);
+             }
+        });
+        
+        // Mouse and Cursor
+        modifiedEditor.onMouseDown(() => handleCursorJump());
+        modifiedEditor.onDidChangeCursorPosition(() => {
+             const pos = getCursorPosition();
+             if (pos) appWindow.emit("editor_cursor_changed", pos);
+        });
+        modifiedEditor.onDidScrollChange((e) => {
+             if (e.scrollTopChanged) syncPreviewFromScrollDebounced();
+        });
+    }
 
     (async () => {
       const EditorWorker = await import("monaco-editor/esm/vs/editor/editor.worker?worker");
@@ -210,67 +306,7 @@
         },
       };
 
-      editorInstance = (await monacoImport).editor.createDiffEditor(divEl, {
-        lineHeight: 1.8,
-        automaticLayout: true,
-        readOnly: true,
-        folding: true,
-        quickSuggestions: false,
-        wordWrap: "on",
-        unicodeHighlight: { ambiguousCharacters: false },
-        padding: { top: 16 },
-        minimap: { enabled: false },
-        fontFamily: "var(--font-mono)",
-        fontSize: 13,
-        renderLineHighlight: "gutter",
-        renderSideBySide: false,
-        scrollbar: {
-          vertical: "auto",
-          horizontal: "auto",
-          verticalScrollbarSize: 8,
-          horizontalScrollbarSize: 8,
-        },
-      });
-
-      editorInstance.onDidChangeModel(() => {
-        handleCompile();
-        updateOutline();
-      });
-
-      editorInstance.onDidUpdateDiff(() => {
-        // Handle logic when diff updates if needed
-      });
-
-      // We need to listen to the *modified* editor for normal typing events
-      const modifiedEditor = editorInstance.getModifiedEditor();
-
-      modifiedEditor.onDidChangeModelContent(() => {
-        clearMarkersWhileTyping();
-        markTypingDone();
-        handleCompile();
-        handleSaveDebounce();
-        updateOutlineDebounced();
-      });
-
-      editorInstance.onDidUpdateDiff(() => {
-          // Might need to update outline or decorations if diff changes, but content change usually covers it.
-      });
-
-      // Mouse events on the modified editor
-      modifiedEditor.onMouseDown(() => {
-        handleCursorJump();
-      });
-
-      // Cursor position on modified editor
-      modifiedEditor.onDidChangeCursorPosition(() => {
-        const pos = getCursorPosition();
-        if (pos) appWindow.emit("editor_cursor_changed", pos);
-      });
-
-      // Scroll changes on modified editor
-      modifiedEditor.onDidScrollChange((e) => {
-        if (e.scrollTopChanged) syncPreviewFromScrollDebounced();
-      });
+      await createEditor();
 
       const unsubscribeCompile = await appWindow.listen<TypstCompileEvent>(
         "typst_compile",
@@ -309,7 +345,7 @@
         text: string;
       }>("replace_range", ({ payload }) => {
         if (editorInstance) {
-          const model = editorInstance.getModel()?.modified;
+          const model = isDiffEditor(editorInstance) ? editorInstance.getModel()?.modified : editorInstance.getModel();
           if (model) {
             const range = {
               startLineNumber: payload.startLine,
@@ -327,7 +363,7 @@
         "delete_range",
         ({ payload }) => {
           if (editorInstance) {
-            const model = editorInstance.getModel()?.modified;
+            const model = isDiffEditor(editorInstance) ? editorInstance.getModel()?.modified : editorInstance.getModel();
             if (model) {
               const range = {
                 startLineNumber: payload.startLine,
@@ -348,7 +384,7 @@
         filename: string;
       }>("extract_section", async ({ payload }) => {
         if (editorInstance) {
-          const model = editorInstance.getModel()?.modified;
+          const model = isDiffEditor(editorInstance) ? editorInstance.getModel()?.modified : editorInstance.getModel();
           if (model) {
             const range = {
               startLineNumber: payload.startLine,
@@ -376,51 +412,77 @@
       });
       cleanup.push(unsubscribeExtractSection);
     })();
+    
+    // React to showDiffEditor changes
+    const unsubDiffStore = showDiffEditor.subscribe(async (val) => {
+         if (editorInstance) {
+              await createEditor();
+         }
+    });
+    cleanup.push(unsubDiffStore);
 
     return () => {
       cleanup.forEach((fn) => fn());
       if (editorInstance) editorInstance.dispose();
       syncPreviewFromScrollDebounced.cancel();
+      updateDiffStatsDebounced.cancel(); 
     };
   });
 
-  const fetchContent = async (editor: IDiffEditor, editorPath: string) => {
+  const fetchContent = async (editor: ICodeEditor | IDiffEditor, editorPath: string) => {
     if (!editor) return;
     editor.updateOptions({ readOnly: true });
-    handleSaveDebounce.flush();
-    const currentModels = editor.getModel();
-    if (currentModels) {
-      currentModels.original.dispose();
-      currentModels.modified.dispose();
+    
+    // Ensure any pending save is flushed and completed before we potentially switch/dispose models
+    // or read from disk into a new model
+    if (handleSaveDebounce) {
+       await handleSaveDebounce.flush();
     }
-
+    
     try {
+      const monaco = await monacoImport;
+      const uri = monaco.Uri.file(editorPath);
+      
       const [content, originalContent] = await Promise.all([
         readFileText(editorPath),
         getOriginalFileContent(editorPath)
       ]);
       
-      const monaco = await monacoImport;
-      const uri = monaco.Uri.file(editorPath);
+      cachedOriginalContent = originalContent;
+
+      // Update stats immediately
+      const stats = computeDiffStats(originalContent, content);
+      diffStats.set(stats);
       
-      // Original model (from git)
-      const originalModel = monaco.editor.createModel(originalContent || "", undefined, uri.with({ scheme: 'original' })); // Use distinct URI
-      
-      // Modified model (current content)
+      // Get or Create Modified Model
       let modifiedModel = monaco.editor.getModel(uri);
       if (modifiedModel) {
-        modifiedModel.setValue(content);
+          modifiedModel.setValue(content);
       } else {
-        modifiedModel = monaco.editor.createModel(content, undefined, uri);
+          modifiedModel = monaco.editor.createModel(content, undefined, uri);
       }
       
-      editor.setModel({
-        original: originalModel,
-        modified: modifiedModel
-      });
+      if (isDiffEditor(editor)) {
+           // Diff Editor Setup
+           const originalUri = uri.with({ scheme: 'original' });
+           // NOTE: We should check if original model exists to avoid collision/leak?
+           let originalModel = monaco.editor.getModel(originalUri);
+           if (originalModel) {
+               originalModel.setValue(originalContent || "");
+           } else {
+               originalModel = monaco.editor.createModel(originalContent || "", undefined, originalUri);
+           }
+           
+           editor.setModel({
+               original: originalModel,
+               modified: modifiedModel
+           });
+      } else {
+           // Standard Editor Setup
+            editor.setModel(modifiedModel);
+      }
 
       updateOutline();
-      // updateGitDecorations(); // Removed
     } finally {
       editor.updateOptions({ readOnly: false });
     }
@@ -431,8 +493,10 @@
     if (text === "") {
       event.preventDefault();
       const res = await paste();
-      const range = editorInstance.getSelection();
-      const model = editorInstance.getModel()?.modified;
+      
+      const range = isDiffEditor(editorInstance) ? editorInstance.getModifiedEditor().getSelection() : editorInstance.getSelection();
+      const model = isDiffEditor(editorInstance) ? editorInstance.getModel()?.modified : editorInstance.getModel();
+      
       if (range && model) {
         model.pushEditOperations(
           [],
@@ -451,18 +515,28 @@
   $: fetchContent(editorInstance, path);
 </script>
 
-<div
-  bind:this={divEl}
-  on:paste={handlePaste}
-  class={$$props.class}
-  role="textbox"
-  tabindex="0"
-></div>
+<div class="editor-wrapper {$$props.class}">
+    <div
+      bind:this={divEl}
+      on:paste={handlePaste}
+      class="editor-div"
+      role="textbox"
+      tabindex="0"
+    ></div>
+
+</div>
 
 <style>
-  div {
-    background: var(--color-bg-primary);
+  .editor-wrapper {
+      position: relative;
+      width: 100%;
+      height: 100%;
   }
 
-
+  .editor-div {
+    background: var(--color-bg-primary);
+    width: 100%;
+    height: 100%;
+  }
+  
 </style>
