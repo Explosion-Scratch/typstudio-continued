@@ -3,6 +3,7 @@
   import { shell } from "../lib/stores";
   import { X } from "$lib/icons";
   import { fade, scale } from "svelte/transition";
+  import QuickOpen from "./QuickOpen.svelte";
 
   let modal: Modal | undefined;
   $: modal = $shell.modals[0];
@@ -53,60 +54,64 @@
 </script>
 
 {#if modal}
-  <div
-    class="modal-backdrop"
-    on:click={handleBackdropClick}
-    on:keydown={(e) => e.key === "Escape" && handleClose()}
-    role="dialog"
-    aria-modal="true"
-    tabindex="-1"
-    transition:fade={{ duration: 150 }}
-  >
+  {#if modal.type === "quick_open"}
+    <QuickOpen />
+  {:else}
     <div
-      class="modal-container"
-      transition:scale={{ duration: 150, start: 0.98 }}
+      class="modal-backdrop"
+      on:click={handleBackdropClick}
+      on:keydown={(e) => e.key === "Escape" && handleClose()}
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      transition:fade={{ duration: 150 }}
     >
-      <div class="modal-header">
-        <h2 class="modal-title">{modal.title}</h2>
-        <button class="close-button" on:click={() => handleClose()}>
-          <X size={16} weight="bold" />
-        </button>
-      </div>
+      <div
+        class="modal-container"
+        transition:scale={{ duration: 150, start: 0.98 }}
+      >
+        <div class="modal-header">
+          <h2 class="modal-title">{modal.title}</h2>
+          <button class="close-button" on:click={() => handleClose()}>
+            <X size={16} weight="bold" />
+          </button>
+        </div>
 
-      <div class="modal-content">
-        {#if modal.type === "input"}
-          <input
-            type="text"
-            class="modal-input"
-            placeholder={modal.placeholder || ""}
-            bind:value={inputValue}
-            on:keyup={handleInputKeyUp}
-            autofocus
-          />
-        {:else if modal.type === "confirm"}
-          <p class="modal-message">{modal.message}</p>
-        {/if}
-      </div>
+        <div class="modal-content">
+          {#if modal.type === "input"}
+            <input
+              type="text"
+              class="modal-input"
+              placeholder={modal.placeholder || ""}
+              bind:value={inputValue}
+              on:keyup={handleInputKeyUp}
+              autofocus
+            />
+          {:else if modal.type === "confirm"}
+            <p class="modal-message">{modal.message}</p>
+          {/if}
+        </div>
 
-      <div class="modal-footer">
-        {#if modal.type === "input"}
-          <button class="modal-button secondary" on:click={() => handleClose()}>
-            Cancel
-          </button>
-          <button class="modal-button primary" on:click={handleInputSubmit}>
-            Create
-          </button>
-        {:else if modal.type === "confirm"}
-          <button class="modal-button secondary" on:click={() => handleClose()}>
-            {modal.cancelLabel || "Cancel"}
-          </button>
-          <button class="modal-button primary" on:click={handleConfirm}>
-            {modal.confirmLabel || "Confirm"}
-          </button>
-        {/if}
+        <div class="modal-footer">
+          {#if modal.type === "input"}
+            <button class="modal-button secondary" on:click={() => handleClose()}>
+              Cancel
+            </button>
+            <button class="modal-button primary" on:click={handleInputSubmit}>
+              Create
+            </button>
+          {:else if modal.type === "confirm"}
+            <button class="modal-button secondary" on:click={() => handleClose()}>
+              {modal.cancelLabel || "Cancel"}
+            </button>
+            <button class="modal-button primary" on:click={handleConfirm}>
+              {modal.confirmLabel || "Confirm"}
+            </button>
+          {/if}
+        </div>
       </div>
     </div>
-  </div>
+  {/if}
 {/if}
 
 <style>

@@ -1,16 +1,23 @@
 <script lang="ts">
-  import { FolderPlus, Clock, FolderDuotone, ArrowRight, CircleNotch } from "$lib/icons";
+  import { FolderPlus, Clock, FolderDuotone, ArrowRight, CircleNotch, Trash, MagnifyingGlass } from "$lib/icons";
   import { recentProjects, shell } from "$lib/stores";
   import { open } from "@tauri-apps/plugin-dialog";
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { fade } from "svelte/transition";
   import { onMount, onDestroy } from "svelte";
+  import ContextMenu, { type ContextMenuItem } from "./ContextMenu.svelte";
+  import { revealPath } from "$lib/ipc/fs";
 
   let isLoading = false;
   let loadingMessage = "Opening project...";
   let loadingProgress = 0;
   let unlistenProgress: UnlistenFn | null = null;
+
+  let contextMenuVisible = false;
+  let contextMenuX = 0;
+  let contextMenuY = 0;
+  let contextMenuItems: ContextMenuItem[] = [];
 
   interface LoadingProgressEvent {
     stage: string;
@@ -89,6 +96,37 @@
     }
   };
 
+  const handleContextMenu = (e: MouseEvent, project: any) => {
+    e.preventDefault();
+    contextMenuX = e.clientX;
+    contextMenuY = e.clientY;
+    contextMenuItems = [
+      {
+        label: "Reveal in Finder",
+        icon: MagnifyingGlass,
+        action: () => handleRevealInFinder(project.path)
+      },
+      {
+        label: "Remove from Recents",
+        icon: Trash,
+        action: () => handleRemoveRecent(project.path)
+      }
+    ];
+    contextMenuVisible = true;
+  };
+
+  const handleRevealInFinder = async (path: string) => {
+    try {
+      await revealPath(path);
+    } catch (e) {
+      console.error("Failed to reveal path:", e);
+    }
+  };
+
+  const handleRemoveRecent = (path: string) => {
+    recentProjects.removeProject(path);
+  };
+
   const formatDate = (timestamp: number) => {
     const date = new Date(timestamp);
     const now = new Date();
@@ -102,7 +140,7 @@
   };
 </script>
 
-<div class="welcome-screen" in:fade={{ duration: 150 }}>
+<div class="welcome-screen bg-vibrant" in:fade={{ duration: 150 }}>
   {#if isLoading}
     <div class="loading-overlay" transition:fade={{ duration: 150 }}>
       <div class="loading-content">
@@ -159,6 +197,7 @@
             <button
               class="recent-item"
               on:click={() => handleOpenRecent(project.path)}
+              on:contextmenu={(e) => handleContextMenu(e, project)}
             >
               <FolderDuotone size={18} weight="duotone" class="recent-icon" />
               <div class="recent-details">
@@ -172,6 +211,15 @@
       </div>
     {/if}
   </div>
+
+  {#if contextMenuVisible}
+    <ContextMenu
+      items={contextMenuItems}
+      x={contextMenuX}
+      y={contextMenuY}
+      on:close={() => (contextMenuVisible = false)}
+    />
+  {/if}
 </div>
 
 <style>
@@ -180,8 +228,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--color-bg-secondary);
     padding: var(--space-xl);
+    user-select: none;
   }
 
   .welcome-content {

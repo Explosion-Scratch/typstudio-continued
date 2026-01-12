@@ -55,7 +55,11 @@ export interface ConfirmModal extends BaseModal {
   onCancel?: () => void;
 }
 
-export type Modal = InputModal | ConfirmModal;
+export interface QuickOpenModal extends BaseModal {
+  type: "quick_open";
+}
+
+export type Modal = InputModal | ConfirmModal | QuickOpenModal;
 
 export enum PreviewState {
   Idle,

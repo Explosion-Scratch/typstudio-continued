@@ -216,13 +216,6 @@
     shell.setIsCompilingLong(false);
   }
 
-  const handleKeyDown = (event: KeyboardEvent) => {
-    if ((event.metaKey || event.ctrlKey) && event.key === "p") {
-      event.preventDefault();
-      handlePrintPdf();
-    }
-  };
-
   const handleRename = () => {
     if (!$shell.selectedFile) return;
     const currentPath = $shell.selectedFile;
@@ -495,9 +488,6 @@
         cleanup.push(unlisten);
       });
 
-    window.addEventListener("keydown", handleKeyDown);
-    cleanup.push(() => window.removeEventListener("keydown", handleKeyDown));
-
     shell.setLoadingStage("Ready", 100);
     shell.setInitializing(false);
 
@@ -612,7 +602,7 @@
             <FileViewer path={$shell.selectedFile} />
           {/if}
         {:else}
-          <div class="empty-state">
+          <div class="empty-state bg-vibrant">
             <span class="empty-text">Select a file to start editing</span>
           </div>
         {/if}
@@ -829,7 +819,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--color-bg-secondary);
   }
 
   .empty-text {

@@ -6,7 +6,7 @@
   export let progress: number = 0;
 </script>
 
-<div class="loading-screen" transition:fade={{ duration: 200 }}>
+<div class="loading-screen bg-vibrant" transition:fade={{ duration: 200 }}>
   <div class="loading-content">
     <CircleNotch size={32} class="spinner" weight="bold" />
     <span class="loading-text">{stage}</span>
@@ -25,7 +25,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--color-bg-primary);
     z-index: 100;
   }
 

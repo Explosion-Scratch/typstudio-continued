@@ -40,3 +40,6 @@ export const renameFile = (oldPath: string, newPath: string): Promise<void> =>
 export const revealPath = (path: string): Promise<void> =>
   invoke("fs_reveal_path", { path });
 
+
+export const searchFiles = (): Promise<string[]> =>
+  invoke<string[]>("fs_search_files");

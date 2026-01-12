@@ -10,6 +10,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Runtime, State, WebviewWindow};
+use ignore::WalkBuilder;
 
 #[derive(Serialize, Debug)]
 pub struct FileItem {
@@ -179,9 +180,62 @@ pub async fn fs_reveal_path<R: Runtime>(
     project_manager: State<'_, Arc<ProjectManager<R>>>,
     path: PathBuf,
 ) -> Result<()> {
-    let (_, abs_path) = project_path(&window, &project_manager, path)?;
+    let abs_path = if path.is_absolute() {
+        path
+    } else {
+        let (_, abs) = project_path(&window, &project_manager, path)?;
+        abs
+    };
     
     opener::reveal(abs_path).map_err(Into::<Error>::into)?;
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn fs_search_files<R: Runtime>(
+    window: WebviewWindow<R>,
+    project_manager: State<'_, Arc<ProjectManager<R>>>,
+) -> Result<Vec<String>> {
+    let project = super::project(&window, &project_manager)?;
+    let root = project.root.clone();
+
+    let mut files = Vec::new();
+    let walker = WalkBuilder::new(&root)
+        .hidden(false)
+        .git_ignore(true)
+        .require_git(false)
+        .filter_entry(|entry| {
+            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                let nomedia = entry.path().join(".nomedia");
+                if nomedia.exists() {
+                    return false;
+                }
+            }
+            true
+        })
+        .build();
+
+    for entry in walker {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        let path = entry.path();
+        
+        if path.is_dir() {
+            continue;
+        }
+
+        if let Ok(relative_path) = path.strip_prefix(&root) {
+            if let Some(path_str) = relative_path.to_str() {
+                if !path_str.is_empty() {
+                    files.push(path_str.to_string());
+                }
+            }
+        }
+    }
+
+    Ok(files)
 }

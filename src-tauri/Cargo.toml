@@ -43,6 +43,7 @@ walkdir = "2.5"
 memmap2 = "0.9"
 opener = { version = "0.7", features = ["reveal"] }
 zip = "0.6"
+ignore = "0.4"
 
 typst = "0.14"
 typst-ide = "0.14"
