@@ -9,6 +9,9 @@
   --color-bg-hover: rgba(55, 53, 47, 0.04);
   --color-bg-active: rgba(55, 53, 47, 0.08);
   --color-bg-selected: rgba(35, 131, 226, 0.1);
+  --color-bg-sidebar: rgba(255, 255, 255, 0.6);
+  --color-bg-sidebar-icons: rgba(247, 246, 243, 0.3);
+  --color-bg-preview: rgba(247, 246, 243, 0.5);
 
   --color-text-primary: #37352f;
   --color-text-secondary: #6b6b6b;
@@ -60,7 +63,7 @@ html, body {
   font-size: 14px;
   line-height: 1.5;
   color: var(--color-text-primary);
-  background: var(--color-bg-primary);
+  background: transparent;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

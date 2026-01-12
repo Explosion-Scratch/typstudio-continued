@@ -18,6 +18,7 @@ use log::info;
 use std::sync::Arc;
 use tauri::Manager;
 use tauri::Wry;
+use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 
 #[tokio::main]
 async fn main() {
@@ -46,6 +47,15 @@ async fn main() {
 
             let compiler = Arc::new(Compiler::new(project_manager, app.handle().clone()));
             app.manage(compiler);
+
+            #[cfg(target_os = "macos")]
+            if let Some(window) = app.get_webview_window("main") {
+                apply_vibrancy(&window, NSVisualEffectMaterial::Sidebar, None, None)
+                    .expect("Unsupported platform! 'apply_vibrancy' is only supported on macOS");
+            } else {
+                println!("Error: Could not find window labeled 'main'");
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

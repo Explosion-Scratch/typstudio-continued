@@ -9,8 +9,10 @@
     "frontendDist": "../build"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
+        "label": "main",
         "title": "Typstudio",
         "width": 1200,
         "height": 800,
@@ -20,7 +22,7 @@
         "fullscreen": false,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "transparent": false
+        "transparent": true
       }
     ],
     "security": {

@@ -652,7 +652,7 @@
     flex-direction: column;
     height: 100vh;
     width: 100vw;
-    background: var(--color-bg-primary);
+    background: transparent;
     overflow: hidden;
     position: relative;
   }

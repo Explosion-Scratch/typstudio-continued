@@ -312,7 +312,7 @@
     display: flex;
     flex-direction: column;
     overflow: auto;
-    background: var(--color-bg-secondary);
+    background: var(--color-bg-preview);
     padding: var(--space-xl);
     cursor: default;
     position: relative;

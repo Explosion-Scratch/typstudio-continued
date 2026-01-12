@@ -60,7 +60,7 @@
   .side-panel {
     display: flex;
     border-right: 1px solid var(--color-border);
-    background: var(--color-bg-primary);
+    background: var(--color-bg-sidebar);
     height: 100%;
     flex: 1;
     min-width: 0;
@@ -72,7 +72,7 @@
     gap: var(--space-xs);
     padding: var(--space-sm);
     border-right: 1px solid var(--color-border);
-    background: var(--color-bg-secondary);
+    background: var(--color-bg-sidebar-icons);
     flex-shrink: 0;
   }
 

@@ -19,7 +19,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_repr = "0.1"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }
-tauri = { version = "2.3", features = ["devtools"] }
+tauri = { version = "2.3", features = ["macos-private-api", "devtools"] }
 tauri-plugin-shell = "2.2"
 tauri-plugin-dialog = "2.2"
 tauri-plugin-fs = "2.3"
@@ -53,6 +53,7 @@ typst-syntax = "0.14"
 comemo = "0.5"
 ecow = "0.2"
 git2 = "0.20.3"
+window-vibrancy = "0.6.0"
 
 [features]
 # by default Tauri runs in production mode

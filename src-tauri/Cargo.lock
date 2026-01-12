@@ -6565,6 +6565,7 @@ dependencies = [
  "typst-svg",
  "typst-syntax",
  "walkdir",
+ "window-vibrancy",
  "zip",
 ]
 
