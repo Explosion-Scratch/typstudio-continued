@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount } from "svelte";
   import { shell, project } from "../lib/stores";
   import { searchFiles } from "$lib/ipc";
   import fuzzysort from "fuzzysort";
@@ -51,8 +51,8 @@
     }
   };
 
-  const openFile = (path: string) => {
-    shell.selectFile(path);
+  const openFile = (filePath: string) => {
+    shell.openFile(filePath);
     close();
   };
 </script>

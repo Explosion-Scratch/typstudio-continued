@@ -72,11 +72,14 @@ pub async fn typst_compile<R: Runtime>(
     compiler: tauri::State<'_, Arc<Compiler<R>>>,
     path: PathBuf,
     content: String,
+    main_path: Option<PathBuf>,
     request_id: u64,
 ) -> Result<()> {
+    log::info!("[Compile] path={:?}, main_path={:?}, request_id={}", path, main_path, request_id);
     compiler.update(CompileRequest {
         path,
         content,
+        main_path,
         request_id,
         window_label: window.label().to_string(),
     });
@@ -626,6 +629,21 @@ pub async fn export_png<R: Runtime>(
     zip.finish().map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
     
     Ok(())
+}
+
+#[tauri::command]
+pub async fn typst_get_document_sources<R: Runtime>(
+    window: tauri::WebviewWindow<R>,
+    project_manager: tauri::State<'_, Arc<ProjectManager<R>>>,
+) -> Result<Vec<String>> {
+    let project = project(&window, &project_manager)?;
+    let world = project.world.lock().unwrap_or_else(|e| {
+        log::warn!("Project world mutex poisoned, recovering: {}", e);
+        e.into_inner()
+    });
+    
+    let sources = world.get_loaded_source_paths();
+    Ok(sources)
 }
 
 #[derive(serde::Deserialize)]

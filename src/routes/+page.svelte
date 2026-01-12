@@ -2,8 +2,8 @@
   import Editor from "../components/Editor.svelte";
   import Preview from "../components/Preview.svelte";
   import { project, shell, recentProjects } from "../lib/stores";
-  import type { ProjectChangeEvent, TypstJump } from "../lib/ipc";
-  import { listDir, revealPath, renameFile } from "../lib/ipc";
+  import type { ProjectChangeEvent, TypstJump, TypstCompileEvent } from "../lib/ipc";
+  import { listDir, revealPath, renameFile, getDocumentSources } from "../lib/ipc";
   import WelcomeScreen from "../components/WelcomeScreen.svelte";
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import { onMount } from "svelte";
@@ -54,9 +54,11 @@
 
   $: selectedExtension = $shell.selectedFile?.toLowerCase().split(".").pop() || "";
   $: isTypstFile = TYPST_EXTENSIONS.some((ext) => $shell.selectedFile?.toLowerCase().endsWith(ext));
+  $: isPreviewable = TYPST_EXTENSIONS.some((ext) => $shell.previewFile?.toLowerCase().endsWith(ext));
   $: isEditableFile = EDITABLE_EXTENSIONS.some((ext) =>
     $shell.selectedFile?.toLowerCase().endsWith(ext),
   );
+  $: isSelectedInDocument = $shell.documentSourceFiles.includes($shell.selectedFile || "");
 
   $: canShowSidebarContent = containerWidth >= 500;
   $: showSidebarContent = $shell.sidebarVisible && canShowSidebarContent;
@@ -78,8 +80,8 @@
   }
 
   $: showEditor = $shell.viewMode === "both" || $shell.viewMode === "editor";
-  $: showPreview = $shell.viewMode === "both" || $shell.viewMode === "preview";
-  $: showViewToggle = !canShowBothPanes && isTypstFile;
+  $: showPreview = ($shell.viewMode === "both" || $shell.viewMode === "preview") && isPreviewable;
+  $: showViewToggle = !canShowBothPanes && (isTypstFile || isPreviewable);
 
   $: if (editorWidth === 0 && contentAreaWidth > 0) {
     editorWidth = Math.floor(contentAreaWidth / 2);
@@ -346,6 +348,8 @@
       .listen<ProjectChangeEvent>("project_changed", async ({ payload }) => {
         shell.setIsOpeningProject(false);
         shell.selectFile(undefined);
+        shell.setPreviewFile(undefined);
+        shell.setDocumentSourceFiles([]);
         project.set(payload.project);
 
         if (payload.project) {
@@ -354,22 +358,55 @@
           try {
             const files = await listDir("/");
             const mainFile = files.find((f) => f.name === "main.typ");
+            const firstTyp = files.find((f) => f.name.endsWith(".typ"));
+            
+            let previewPath: string | undefined;
             if (mainFile) {
               shell.selectFile("/main.typ");
-            } else {
-              const firstTyp = files.find((f) => f.name.endsWith(".typ"));
-              if (firstTyp) {
-                shell.selectFile("/" + firstTyp.name);
-              }
+              shell.setPreviewFile("/main.typ");
+              previewPath = "/main.typ";
+            } else if (firstTyp) {
+              shell.selectFile("/" + firstTyp.name);
+              shell.setPreviewFile("/" + firstTyp.name);
+              previewPath = "/" + firstTyp.name;
             }
 
-            setTimeout(() => {
-              appWindow.emit("trigger_compile");
-            }, 100);
+            if (previewPath) {
+              setTimeout(() => {
+                appWindow.emit("trigger_compile", { previewFile: previewPath });
+              }, 100);
+            }
           } catch (e) {
             console.error("Failed to list files:", e);
           }
         }
+      })
+      .then((unlisten) => {
+        cleanup.push(unlisten);
+      });
+    
+    appWindow
+      .listen<TypstCompileEvent>("typst_compile", async () => {
+        try {
+          const sources = await getDocumentSources();
+          console.log("[typst_compile] Document sources updated:", sources);
+          shell.setDocumentSourceFiles(sources);
+        } catch (e) {
+          console.error("Failed to get document sources:", e);
+        }
+      })
+      .then((unlisten) => {
+        cleanup.push(unlisten);
+      });
+
+    appWindow
+      .listen<{ path: string }>("preview_document", async ({ payload }) => {
+        shell.setPreviewFile(payload.path);
+        shell.selectFile(payload.path);
+        shell.setDocumentSourceFiles([]);
+        setTimeout(() => {
+          appWindow.emit("trigger_compile", { previewFile: payload.path });
+        }, 100);
       })
       .then((unlisten) => {
         cleanup.push(unlisten);
@@ -574,7 +611,7 @@
             <div
               class="editor-container"
               class:hidden={!showEditor}
-              style={$shell.viewMode === "both"
+              style={$shell.viewMode === "both" && isPreviewable
                 ? `width: ${editorWidth}px`
                 : showEditor
                   ? "flex: 1"
@@ -582,7 +619,7 @@
             >
               <Editor class="editor-pane" path={$shell.selectedFile} isVisible={showEditor} />
             </div>
-            {#if isTypstFile}
+            {#if isPreviewable}
               {#if $shell.viewMode === "both"}
                 <Resizer
                   direction="horizontal"

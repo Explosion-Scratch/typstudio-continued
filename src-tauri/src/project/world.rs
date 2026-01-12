@@ -72,6 +72,9 @@ impl ProjectWorld {
     }
 
     pub fn set_main(&mut self, id: Option<FileId>) {
+        if self.main != id {
+            self.clear_slots();
+        }
         self.main = id
     }
 
@@ -81,6 +84,33 @@ impl ProjectWorld {
 
     pub fn is_main_set(&self) -> bool {
         self.main.is_some()
+    }
+
+    pub fn get_loaded_source_paths(&self) -> Vec<String> {
+        let slots = self.slots.read().unwrap();
+        slots.iter()
+            .filter_map(|(id, _slot)| {
+                if id.package().is_none() {
+                    let path = id.vpath().as_rootless_path().to_string_lossy().to_string();
+                    let filepath = if path.starts_with('/') { path } else { format!("/{}", path) };
+                    Some(filepath)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    pub fn clear_slots(&self) {
+        let mut slots = self.slots.write().unwrap();
+        slots.clear();
+    }
+    
+    pub fn get_main_path(&self) -> Option<String> {
+        self.main.map(|id| {
+            let path = id.vpath().as_rootless_path().to_string_lossy().to_string();
+            if path.starts_with('/') { path } else { format!("/{}", path) }
+        })
     }
 
     pub fn new(root: PathBuf, progress: Option<Box<dyn Fn(String, u32) + Send>>) -> Self {

@@ -39,7 +39,11 @@
   $: if (isVisible && editorInstance) {
     const pending = $pendingScroll;
     if (pending.source === "preview" && pending.line) {
-      scrollToPosition(pending.line);
+      const model = isDiffEditor(editorInstance) ? editorInstance.getModel()?.modified : editorInstance.getModel();
+      const currentPath = model?.uri.path;
+      if (!pending.filepath || pending.filepath === currentPath) {
+        scrollToPosition(pending.line);
+      }
       pendingScroll.update((p) => ({ ...p, source: null }));
     }
   }
@@ -100,7 +104,7 @@
     applyMarkers(lastDiagnostics);
   }, 300);
 
-  const handleCompile = async () => {
+  const handleCompile = async (overridePreviewFile?: string) => {
     const model = isDiffEditor(editorInstance) ? editorInstance.getModel()?.modified : editorInstance.getModel();
     if (model) {
       const filePath = model.uri.path;
@@ -109,7 +113,10 @@
       const requestId = shell.nextCompileRequestId();
       lastCompileRequestId = requestId;
       shell.setPreviewState(PreviewState.Compiling);
-      await compile(model.uri.path, model.getValue(), requestId);
+      
+      const previewFile = overridePreviewFile ?? $shell.previewFile;
+      const mainPath = previewFile !== filePath ? previewFile : undefined;
+      await compile(model.uri.path, model.getValue(), requestId, mainPath);
     }
   };
 
@@ -328,8 +335,9 @@
       );
       cleanup.push(unsubscribeJumpTo);
 
-      const unsubscribeTriggerCompile = await appWindow.listen("trigger_compile", () =>
-        handleCompile(),
+      const unsubscribeTriggerCompile = await appWindow.listen<{ previewFile?: string }>(
+        "trigger_compile",
+        ({ payload }) => handleCompile(payload?.previewFile),
       );
       cleanup.push(unsubscribeTriggerCompile);
 

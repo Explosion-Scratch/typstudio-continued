@@ -78,6 +78,7 @@ async fn main() {
             ipc::commands::typst_list_packages,
             ipc::commands::typst_delete_package,
             ipc::commands::typst_install_package,
+            ipc::commands::typst_get_document_sources,
             ipc::commands::clipboard_paste,
             ipc::commands::open_project,
             ipc::commands::create_playground,

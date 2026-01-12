@@ -165,11 +165,16 @@ export const getEditorToPreviewTarget = async (editor: editor.ICodeEditor): Prom
     }
 }
 
-export const getPreviewToEditorTargetLine = async (
+export interface PreviewToEditorTarget {
+    line: number;
+    filepath: string;
+}
+
+export const getPreviewToEditorTarget = async (
     container: HTMLElement, 
     pagesContainer: HTMLElement, 
     effectiveScale: number
-): Promise<number | null> => {
+): Promise<PreviewToEditorTarget | null> => {
     const positions = getPreview3Positions(container, pagesContainer, effectiveScale);
     
     try {
@@ -184,19 +189,36 @@ export const getPreviewToEditorTargetLine = async (
         
         const results = await Promise.all(promises);
         
-        const lines: number[] = [];
-        for (const r of results) {
-            if (r && r.start && typeof r.start[0] === 'number') {
-                lines.push(r.start[0]);
-            }
-        }
+        const validResults = results.filter((r): r is NonNullable<typeof r> => 
+            r !== null && r.start !== null && typeof r.start[0] === 'number'
+        );
         
-        if (lines.length === 0) return null;
+        if (validResults.length === 0) return null;
         
+        const firstResult = validResults[0];
+        const filepath = firstResult.filepath;
+        
+        const sameFileResults = validResults.filter(r => r.filepath === filepath);
+        if (sameFileResults.length === 0) return null;
+        
+        const lines = sameFileResults.map(r => r.start![0]);
         const sum = lines.reduce((a, b) => a + b, 0);
-        return Math.round(sum / lines.length);
+        
+        return {
+            line: Math.round(sum / lines.length),
+            filepath
+        };
     } catch (e) {
         console.error("Failed to calculate preview sync target", e);
         return null;
     }
+}
+
+export const getPreviewToEditorTargetLine = async (
+    container: HTMLElement, 
+    pagesContainer: HTMLElement, 
+    effectiveScale: number
+): Promise<number | null> => {
+    const target = await getPreviewToEditorTarget(container, pagesContainer, effectiveScale);
+    return target?.line ?? null;
 }

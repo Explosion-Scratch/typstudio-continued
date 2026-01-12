@@ -2,7 +2,7 @@
   import PreviewPage from "./PreviewPage.svelte";
   import CompileErrorDisplay from "./CompileErrorDisplay.svelte";
   import ZoomControls from "./ZoomControls.svelte";
-  import { calculatePreviewScrollCenter, getPreviewToEditorTargetLine, getPreview3Positions } from "$lib/scroll";
+  import { calculatePreviewScrollCenter, getPreviewToEditorTarget, getPreview3Positions } from "$lib/scroll";
   import { onMount, tick } from "svelte";
   import type { TypstCompileEvent, TypstSourceDiagnostic } from "../lib/ipc";
   import { jump } from "../lib/ipc";
@@ -118,12 +118,13 @@
     const centerPos = positions[1];
 
     if ($shell.viewMode === "preview") {
-      const avgLine = await getPreviewToEditorTargetLine(container, pagesContainer, effectiveScale);
+      const target = await getPreviewToEditorTarget(container, pagesContainer, effectiveScale);
       
       pendingScroll.update(p => ({
         ...p,
         source: 'preview',
-        line: avgLine ?? p.line,
+        line: target?.line ?? p.line,
+        filepath: target?.filepath ?? p.filepath,
         preview: centerPos ?? p.preview
       }));
     } else {

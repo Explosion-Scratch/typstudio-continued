@@ -1,5 +1,8 @@
-import { writable, derived } from "svelte/store";
+import { writable } from "svelte/store";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { TypstSourceDiagnostic } from "./ipc";
+
+const TYPST_EXTENSIONS = [".typ"];
 
 export interface Project {
   root: string;
@@ -19,6 +22,8 @@ export type SidebarTab = "files" | "outline" | "packages";
 
 export interface Shell {
   selectedFile: string | undefined;
+  previewFile: string | undefined;
+  documentSourceFiles: string[];
   modals: Modal[];
   previewState: PreviewState;
   isInitializing: boolean;
@@ -70,6 +75,8 @@ export enum PreviewState {
 const createShell = () => {
   const { subscribe, set, update } = writable<Shell>({
     selectedFile: undefined,
+    previewFile: undefined,
+    documentSourceFiles: [],
     modals: [],
     previewState: PreviewState.Idle,
     isInitializing: true,
@@ -96,6 +103,24 @@ const createShell = () => {
         ...shell,
         selectedFile: path,
       }));
+    },
+    setPreviewFile(path: string | undefined) {
+      update((shell) => ({
+        ...shell,
+        previewFile: path,
+      }));
+    },
+    setDocumentSourceFiles(files: string[]) {
+      update((shell) => ({
+        ...shell,
+        documentSourceFiles: files,
+      }));
+    },
+    isFileInDocument(filePath: string): boolean {
+      let currentFiles: string[] = [];
+      const unsub = subscribe(s => { currentFiles = s.documentSourceFiles; });
+      unsub();
+      return currentFiles.includes(filePath);
     },
     createModal(modal: Modal) {
       update((shell) => ({
@@ -170,6 +195,43 @@ const createShell = () => {
     setIsCompilingLong(isCompilingLong: boolean) {
       update((shell) => ({ ...shell, isCompilingLong }));
     },
+    async openFile(path: string) {
+      const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+      const isTypstFile = TYPST_EXTENSIONS.some((ext) => normalizedPath.toLowerCase().endsWith(ext));
+      
+      let currentState: Shell | undefined;
+      const unsub = subscribe((s) => { currentState = s; });
+      unsub();
+      
+      if (!currentState) return;
+      
+      update((shell) => ({ ...shell, selectedFile: normalizedPath }));
+      
+      if (isTypstFile) {
+        const hasPreview = !!currentState.previewFile;
+        const isInDocument = currentState.documentSourceFiles.includes(normalizedPath);
+        const shouldSwitchPreview = !hasPreview || !isInDocument;
+        
+        console.log("[openFile]", { 
+          normalizedPath, 
+          currentPreview: currentState.previewFile,
+          documentSources: currentState.documentSourceFiles,
+          hasPreview, 
+          isInDocument, 
+          shouldSwitchPreview 
+        });
+        
+        if (shouldSwitchPreview) {
+          console.log("[openFile] Switching preview to:", normalizedPath);
+          update((shell) => ({ 
+            ...shell, 
+            previewFile: normalizedPath, 
+            documentSourceFiles: [] 
+          }));
+          getCurrentWindow().emit("trigger_compile", { previewFile: normalizedPath });
+        }
+      }
+    },
   };
 };
 
@@ -242,6 +304,7 @@ export const recentProjects = createRecentProjects();
 export const pendingScroll = writable<{
   source: 'editor' | 'preview' | null;
   line?: number;
+  filepath?: string;
   preview?: { page: number, x: number, y: number };
 }>({ source: null });
 

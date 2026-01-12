@@ -19,6 +19,7 @@ use typst::World;
 pub struct CompileRequest {
     pub path: PathBuf,
     pub content: String,
+    pub main_path: Option<PathBuf>,
     pub request_id: u64,
     pub window_label: String,
 }
@@ -107,7 +108,8 @@ fn compile_job<R: Runtime>(
         return;
     }
 
-    world_guard.set_main_path(typst::syntax::VirtualPath::new(&req.path));
+    let main_to_set = req.main_path.as_ref().unwrap_or(&req.path);
+    world_guard.set_main_path(typst::syntax::VirtualPath::new(main_to_set));
     
     if !world_guard.is_main_set() {
         let config = project.config.read().unwrap();

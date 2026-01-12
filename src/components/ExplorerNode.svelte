@@ -14,6 +14,7 @@
     FilePdf,
     FileSvg,
     FileImage,
+    Eye,
   } from "$lib/icons";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   const appWindow = getCurrentWindow();
@@ -32,7 +33,7 @@
     if (type === "directory") {
       expanded = !expanded;
     } else {
-      shell.selectFile(path);
+      shell.openFile(path);
     }
   };
 
@@ -102,6 +103,10 @@
     appWindow.emit("export_file_as_png", { path });
   };
 
+  const handlePreviewDocument = () => {
+    appWindow.emit("preview_document", { path });
+  };
+
   const getContextMenuItems = (): ContextMenuItem[] => {
     const items: ContextMenuItem[] = [
       {
@@ -113,6 +118,12 @@
 
     if (isTypstFile) {
       items.push(
+        { label: "", action: () => {}, divider: true },
+        {
+          label: "Preview This Document",
+          icon: Eye,
+          action: handlePreviewDocument,
+        },
         { label: "", action: () => {}, divider: true },
         {
           label: "Export to PDF",

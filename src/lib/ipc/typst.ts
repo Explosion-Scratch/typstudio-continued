@@ -49,8 +49,8 @@ export interface TypstCompleteResponse {
   completions: TypstCompletion[];
 }
 
-export const compile = (path: string, content: string, requestId: number): Promise<TypstRenderResponse> =>
-  invoke<TypstRenderResponse>("typst_compile", { path, content, requestId });
+export const compile = (path: string, content: string, requestId: number, mainPath?: string): Promise<TypstRenderResponse> =>
+  invoke<TypstRenderResponse>("typst_compile", { path, content, mainPath, requestId });
 
 export const render = (page: number, scale: number, nonce: number): Promise<TypstRenderResponse> =>
   invoke<TypstRenderResponse>("typst_render", { page, scale, nonce });
@@ -105,3 +105,6 @@ export const jumpFromCursor = (
 ): Promise<TypstDocumentPosition | null> =>
   invoke<TypstDocumentPosition | null>("typst_jump_from_cursor", { path, content, byteOffset });
 
+
+export const getDocumentSources = (): Promise<string[]> =>
+  invoke<string[]>("typst_get_document_sources");
