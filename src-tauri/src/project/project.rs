@@ -1,3 +1,4 @@
+use crate::compiler::IncrementalRenderer;
 use crate::project::ProjectWorld;
 use log::debug;
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,7 @@ pub struct Project {
     pub cache: RwLock<ProjectCache>,
     pub config: RwLock<ProjectConfig>,
     pub current_compile_request_id: AtomicU64,
+    pub renderer: Mutex<IncrementalRenderer>,
 }
 
 #[derive(Default)]
@@ -99,6 +101,7 @@ impl Project {
             config: RwLock::new(config),
             root: path,
             current_compile_request_id: AtomicU64::new(0),
+            renderer: Mutex::new(IncrementalRenderer::new()),
         }
     }
 }

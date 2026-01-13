@@ -4,6 +4,7 @@
   import { onMount } from "svelte";
   import { CircleNotch } from "../lib/icons";
   import { fade } from "svelte/transition";
+  import { patchSvgToContainer } from "../lib/typst-patch";
 
   export let page: number;
   export let hash: string;
@@ -33,6 +34,12 @@
     canRender = isIntersecting;
   };
 
+  const decorateSvg = (svgEl: SVGElement) => {
+    svgEl.style.width = "100%";
+    svgEl.style.height = "100%";
+    svgEl.style.display = "block";
+  };
+
   const update = async (updateHash: string, updateScale: number) => {
     loading = true;
     clearTimeout(loadingTimer);
@@ -45,14 +52,7 @@
 
       if (res.nonce > lastNonce) {
         lastNonce = res.nonce;
-        container.innerHTML = res.image;
-        
-        const svgEl = container.querySelector("svg");
-        if (svgEl) {
-          svgEl.style.width = "100%";
-          svgEl.style.height = "100%";
-          svgEl.style.display = "block";
-        }
+        patchSvgToContainer(container, res.image, decorateSvg);
       }
     } finally {
       loading = false;

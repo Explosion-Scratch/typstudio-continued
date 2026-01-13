@@ -99,22 +99,32 @@ pub async fn typst_render<R: Runtime>(
         .get_project(&window)
         .ok_or(Error::UnknownProject)?;
 
-    let cache = project.cache.read().unwrap();
-    if let Some(p) = cache.document.as_ref().and_then(|doc| doc.pages.get(page)) {
-        let svg = typst_svg::svg(p);
+    let (width, height) = {
+        let cache = project.cache.read().unwrap();
+        let doc = cache.document.as_ref().ok_or(Error::Unknown)?;
+        let p = doc.pages.get(page).ok_or(Error::Unknown)?;
+        (
+            (p.frame.width().to_pt() * scale as f64) as u32,
+            (p.frame.height().to_pt() * scale as f64) as u32,
+        )
+    };
+    
+    let svg = {
+        let cache = project.cache.read().unwrap();
+        let doc = cache.document.as_ref().ok_or(Error::Unknown)?;
+        let p = doc.pages.get(page).ok_or(Error::Unknown)?;
         
-        let width = (p.frame.width().to_pt() * scale as f64) as u32;
-        let height = (p.frame.height().to_pt() * scale as f64) as u32;
-        
-        return Ok(TypstRenderResponse {
-            image: svg,
-            width,
-            height,
-            nonce,
-        });
-    }
-
-    Err(Error::Unknown)
+        let mut renderer = project.renderer.lock().unwrap_or_else(|e| e.into_inner());
+        let (svg, _was_changed) = renderer.render_page(page, p);
+        svg
+    };
+    
+    Ok(TypstRenderResponse {
+        image: svg,
+        width,
+        height,
+        nonce,
+    })
 }
 
 #[tauri::command]
@@ -593,37 +603,45 @@ pub async fn export_png<R: Runtime>(
     project_manager: tauri::State<'_, Arc<ProjectManager<R>>>,
     path: String,
 ) -> Result<()> {
+    use rayon::prelude::*;
+    
     let project = project_manager
         .get_project(&window)
         .ok_or(Error::UnknownProject)?;
 
-    let cache = project.cache.read().unwrap();
-    let doc = cache.document.as_ref().ok_or(Error::Unknown)?;
+    let pages: Vec<_> = {
+        let cache = project.cache.read().unwrap();
+        let doc = cache.document.as_ref().ok_or(Error::Unknown)?;
+        doc.pages.clone()
+    };
 
     let mut path_buf = PathBuf::from(&path);
     if path_buf.extension().is_none() {
         path_buf.set_extension("zip");
     }
 
+    let ppi = 144.0;
+    let scale = ppi / 72.0;
+
+    let rendered: Vec<(usize, Vec<u8>)> = pages
+        .par_iter()
+        .enumerate()
+        .filter_map(|(i, page)| {
+            let pixmap = typst_render::render(page, scale);
+            pixmap.encode_png().ok().map(|data| (i, data))
+        })
+        .collect();
+
     let file = std::fs::File::create(&path_buf).map_err(Into::<Error>::into)?;
     let mut zip = zip::ZipWriter::new(file);
     let options = zip::write::FileOptions::default()
         .compression_method(zip::CompressionMethod::Stored);
 
-    let ppi = 144.0;
-    let scale = ppi / 72.0;
-
-    for (i, page) in doc.pages.iter().enumerate() {
-        let pixmap = typst_render::render(page, scale);
+    for (i, data) in rendered {
         let filename = format!("page_{:02}.png", i + 1);
         zip.start_file(filename, options).map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
-        
-        if let Ok(data) = pixmap.encode_png() {
-             use std::io::Write;
-             zip.write_all(&data).map_err(Into::<Error>::into)?;
-        } else {
-             return Err(Error::Unknown);
-        }
+        use std::io::Write;
+        zip.write_all(&data).map_err(Into::<Error>::into)?;
     }
     
     zip.finish().map_err(|e| Error::IO(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;

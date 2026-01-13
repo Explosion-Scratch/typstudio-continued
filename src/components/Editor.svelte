@@ -120,12 +120,13 @@
     }
   };
 
+  const handleCompileDebounced = debounce(handleCompile, 150, { maxWait: 500 });
+
   const handleSave = () => {
     // Return promise to allow awaiting save completion
     const model = isDiffEditor(editorInstance) ? editorInstance.getModel()?.modified : editorInstance.getModel();
     if (model) {
       return writeFileText(model.uri.path, model.getValue()).then(() => {
-        // updateGitDecorations(); // Removed, handled natively
       });
     }
     return Promise.resolve();
@@ -277,10 +278,9 @@
         const modifiedEditor = isDiffEditor(instance) ? instance.getModifiedEditor() : instance;
 
         modifiedEditor.onDidChangeModelContent(async () => {
-             // Basic listeners
              clearMarkersWhileTyping();
              markTypingDone();
-             handleCompile();
+             handleCompileDebounced();
              handleSaveDebounce();
              updateOutlineDebounced();
              

@@ -8,6 +8,7 @@
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import { onMount } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import debounce from "lodash/debounce";
 
   const appWindow = getCurrentWindow();
   import SidePanel from "../components/SidePanel.svelte";
@@ -385,15 +386,20 @@
         cleanup.push(unlisten);
       });
     
+    const fetchDocumentSourcesDebounced = debounce(async () => {
+      try {
+        const sources = await getDocumentSources();
+        shell.setDocumentSourceFiles(sources);
+      } catch (e) {
+        console.error("Failed to get document sources:", e);
+      }
+    }, 500);
+    
+    cleanup.push(() => fetchDocumentSourcesDebounced.cancel());
+
     appWindow
-      .listen<TypstCompileEvent>("typst_compile", async () => {
-        try {
-          const sources = await getDocumentSources();
-          console.log("[typst_compile] Document sources updated:", sources);
-          shell.setDocumentSourceFiles(sources);
-        } catch (e) {
-          console.error("Failed to get document sources:", e);
-        }
+      .listen<TypstCompileEvent>("typst_compile", () => {
+        fetchDocumentSourcesDebounced();
       })
       .then((unlisten) => {
         cleanup.push(unlisten);
