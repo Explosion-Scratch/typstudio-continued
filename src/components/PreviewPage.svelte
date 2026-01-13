@@ -11,6 +11,7 @@
   export let width: number;
   export let height: number;
   export let scale: number;
+  export let preRenderedSvg: string | undefined = undefined;
 
   let container: HTMLDivElement;
   let canRender = false;
@@ -20,6 +21,7 @@
   let loading = false;
   let showLoading = false;
   let loadingTimer: any;
+  let lastHash: string | null = null;
 
   onMount(() => {
     const observer = new IntersectionObserver((entries) => {
@@ -30,17 +32,21 @@
     return () => observer.disconnect();
   });
 
-  const invalidateCanRender = (_hash: string, _scale: number) => {
-    canRender = isIntersecting;
-  };
-
   const decorateSvg = (svgEl: SVGElement) => {
     svgEl.style.width = "100%";
     svgEl.style.height = "100%";
     svgEl.style.display = "block";
   };
 
-  const update = async (updateHash: string, updateScale: number) => {
+  const update = async (updateHash: string, updateScale: number, preRendered?: string) => {
+    if (updateHash === lastHash && !preRendered) return;
+    lastHash = updateHash;
+    
+    if (preRendered) {
+      patchSvgToContainer(container, preRendered, decorateSvg);
+      return;
+    }
+    
     loading = true;
     clearTimeout(loadingTimer);
     loadingTimer = setTimeout(() => {
@@ -61,8 +67,8 @@
     }
   };
 
-  $: invalidateCanRender(hash, scale);
-  $: if (canRender) update(hash, scale);
+  $: if (hash && isIntersecting) canRender = true;
+  $: if (canRender && container) update(hash, scale, preRenderedSvg);
 </script>
 <div
   class="preview-page"

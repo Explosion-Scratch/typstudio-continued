@@ -14,6 +14,7 @@ pub struct TypstDocument {
     pub hash: String,
     pub width: f64,
     pub height: f64,
+    pub page_svgs: Vec<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]

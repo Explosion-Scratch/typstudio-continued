@@ -10,6 +10,7 @@ export interface TypstDocument {
   hash: string;
   width: number;
   height: number;
+  page_svgs: string[];
 }
 
 export type TypstDiagnosticSeverity = "error" | "warning";

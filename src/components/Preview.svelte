@@ -31,6 +31,7 @@
   let height: number = 0;
   let containerWidth: number = 0;
   let currentErrors: TypstSourceDiagnostic[] = [];
+  let pageSvgs: string[] = [];
 
   $: padding = 48;
   $: effectiveScale = width > 0 && containerWidth > 0 
@@ -218,6 +219,7 @@
             hash = document.hash;
             width = document.width;
             height = document.height;
+            pageSvgs = document.page_svgs || [];
           }
         }
       );
@@ -282,6 +284,7 @@
               width={Math.floor(width * effectiveScale)}
               height={Math.floor(height * effectiveScale)}
               scale={effectiveScale}
+              preRenderedSvg={pageSvgs[i]}
             />
           {/if}
         {/each}

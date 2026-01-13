@@ -141,6 +141,16 @@ fn compile_job<R: Runtime>(
              let first_page = &doc.pages[0];
              let width = first_page.frame.width();
              let height = first_page.frame.height();
+             
+             let max_prerender = std::cmp::min(pages, 10);
+             let page_svgs: Vec<String> = (0..max_prerender)
+                 .map(|i| {
+                     let page = &doc.pages[i];
+                     let mut renderer = project.renderer.lock().unwrap_or_else(|e| e.into_inner());
+                     let (svg, _) = renderer.render_page(i, page);
+                     svg
+                 })
+                 .collect();
 
              project.cache.write().unwrap().document = Some(doc);
             
@@ -150,6 +160,7 @@ fn compile_job<R: Runtime>(
                      hash,
                      width: width.to_pt(),
                      height: height.to_pt(),
+                     page_svgs,
                  }),
                  diagnostics: None,
              }));

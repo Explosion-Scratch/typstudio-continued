@@ -120,7 +120,7 @@
     }
   };
 
-  const handleCompileDebounced = debounce(handleCompile, 150, { maxWait: 500 });
+  const handleCompileDebounced = debounce(handleCompile, 50, { maxWait: 200 });
 
   const handleSave = () => {
     // Return promise to allow awaiting save completion
