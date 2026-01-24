@@ -27,7 +27,11 @@ jobs:
       - name: Build and Release
         run: |
           # Extract version from tag (e.g., v0.1.0 -> 0.1.0)
-          VERSION=${GITHUB_REF#refs/tags/v}
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION=""
+          fi
           bun run release $VERSION
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

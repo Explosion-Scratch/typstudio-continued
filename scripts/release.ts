@@ -9,6 +9,19 @@ async function run() {
 
   if (dryRun) console.log("--- DRY RUN MODE ---");
 
+  const pkgPath = "package.json";
+  const tauriPath = "src-tauri/tauri.conf.json";
+  const cargoPath = "src-tauri/Cargo.toml";
+
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+  const currentVersion = pkg.version;
+
+  // Validate version if provided
+  if (newVersion && (newVersion.startsWith("refs/") || !/^\d+\.\d+\.\d+(-.*)?$/.test(newVersion))) {
+    console.log(`Invalid version arg: ${newVersion}. Falling back to package.json version.`);
+    newVersion = undefined;
+  }
+
   // Check for gh CLI and auth
   try {
     await $`gh --version`.quiet();
@@ -24,12 +37,7 @@ async function run() {
     process.exit(1);
   }
 
-  const pkgPath = "package.json";
-  const tauriPath = "src-tauri/tauri.conf.json";
-  const cargoPath = "src-tauri/Cargo.toml";
-
-  const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
-  const currentVersion = pkg.version;
+  // Files were defined above
 
   if (newVersion && newVersion !== currentVersion) {
     console.log(`Updating version from ${currentVersion} to ${newVersion}...`);
@@ -41,7 +49,8 @@ async function run() {
     writeFileSync(tauriPath, JSON.stringify(tauri, null, 2) + "\n");
 
     let cargo = readFileSync(cargoPath, "utf-8");
-    cargo = cargo.replace(/^version = ".*"$/m, `version = "${newVersion}"`);
+    // Replace only the first occurrence of version = "..." which is the package version
+    cargo = cargo.replace(/^version\s*=\s*".*"/m, `version = "${newVersion}"`);
     writeFileSync(cargoPath, cargo);
 
     console.log("Updated package.json, tauri.conf.json, and Cargo.toml");
@@ -90,11 +99,20 @@ ${commits || "No changes found."}
       build: { beforeBuildCommand: "" }
     });
 
+    // Write a temporary config to avoid shell interpolation/parsing issues
+    const tempConfigPath = "src-tauri/temp.config.json";
+    writeFileSync(tempConfigPath, skipBuildCmd);
+
     console.log("Building for Mac x86_64...");
-    await $`bun tauri build --target x86_64-apple-darwin --config ${skipBuildCmd}`;
+    await $`bun tauri build --target x86_64-apple-darwin --config ${tempConfigPath}`;
 
     console.log("Building for Mac ARM64...");
-    await $`bun tauri build --target aarch64-apple-darwin --config ${skipBuildCmd}`;
+    await $`bun tauri build --target aarch64-apple-darwin --config ${tempConfigPath}`;
+
+    // Cleanup temp config
+    try {
+      await $`rm ${tempConfigPath}`;
+    } catch (e) {}
   }
 
   // Collect artifacts
