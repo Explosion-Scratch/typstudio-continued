@@ -11,4 +11,4 @@
 
 ## Demo video
 
-<video src="../demos/demo.mp4" width="100%" controls autoplay loop muted></video>
+![Demo](../demos/demo.mp4)
