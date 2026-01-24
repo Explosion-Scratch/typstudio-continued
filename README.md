@@ -1,4 +1,7 @@
-# Typstudio
+<div align=center><img src="./icon.png" width="196" height="196" /></div>
+<br/><br/>
+<div align=center><h1>Typstudio</h1></div>
+<br/><br/>
 
 https://github.com/user-attachments/assets/8b86f2dc-4544-43aa-8f1f-21002a87e5b1
 
