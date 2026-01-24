@@ -26,6 +26,7 @@ async function run() {
 
   const pkgPath = "package.json";
   const tauriPath = "src-tauri/tauri.conf.json";
+  const cargoPath = "src-tauri/Cargo.toml";
 
   const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
   const currentVersion = pkg.version;
@@ -38,7 +39,12 @@ async function run() {
     const tauri = JSON.parse(readFileSync(tauriPath, "utf-8"));
     tauri.version = newVersion;
     writeFileSync(tauriPath, JSON.stringify(tauri, null, 2) + "\n");
-    console.log("Updated package.json and tauri.conf.json");
+
+    let cargo = readFileSync(cargoPath, "utf-8");
+    cargo = cargo.replace(/^version = ".*"$/m, `version = "${newVersion}"`);
+    writeFileSync(cargoPath, cargo);
+
+    console.log("Updated package.json, tauri.conf.json, and Cargo.toml");
   } else {
     newVersion = currentVersion;
     console.log(`Using version: ${newVersion}`);
@@ -79,13 +85,16 @@ ${commits || "No changes found."}
     console.log("Building frontend...");
     await $`bun run build`;
 
-    const skipBuildCmd = JSON.stringify({ build: { beforeBuildCommand: "" } });
+    const skipBuildCmd = JSON.stringify({
+      version: newVersion,
+      build: { beforeBuildCommand: "" }
+    });
 
     console.log("Building for Mac x86_64...");
-    await $`bun tauri build --target x86_64-apple-darwin --config '${skipBuildCmd}'`;
+    await $`bun tauri build --target x86_64-apple-darwin --config ${skipBuildCmd}`;
 
     console.log("Building for Mac ARM64...");
-    await $`bun tauri build --target aarch64-apple-darwin --config '${skipBuildCmd}'`;
+    await $`bun tauri build --target aarch64-apple-darwin --config ${skipBuildCmd}`;
   }
 
   // Collect artifacts
