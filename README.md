@@ -21,3 +21,7 @@ Features:
 - Support for multiple documents at once
 - Editor also renders PDFs, images, and other media for convenience.
 - Git integration - interactive diff editor
+
+
+
+Note: I started with the original [Typstudio](https://github.com/Cubxity/typstudio) by Cubixity but almost all of the code now has been rewritten from scratch by me.
