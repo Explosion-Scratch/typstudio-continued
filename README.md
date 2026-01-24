@@ -1,9 +1,10 @@
 # Typstudio
 
-![Demo](./demos/demo.mp4)
+https://github.com/user-attachments/assets/8b86f2dc-4544-43aa-8f1f-21002a87e5b1
+
 
 > [!TIP]
-> **[View Gallery & Screenshots](./screenshots/README.md)**
+> **[View screenshots!](./screenshots/README.md)**
 
 A beautiful, cross platform application to edit [Typst](https://typst.app/) documents. This application supports bidirectional syncing between the source files and the compiled document, instant re-rendering via partial incremental updates, fully integrates [Tinymist LSP](https://github.com/Myriad-Dreamin/tinymist), and provides a sleek, easy to use and minimal document editing experience.
 
