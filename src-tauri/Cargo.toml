@@ -22,16 +22,13 @@ tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] 
 tauri = { version = "2.3", features = ["macos-private-api", "devtools"] }
 tauri-plugin-shell = "2.2"
 tauri-plugin-dialog = "2.2"
-tauri-plugin-fs = "2.3"
 tauri-plugin-opener = "2.2"
 anyhow = "1.0"
 thiserror = "1.0"
 enumset = { version = "1.1", features = ["serde"] }
 siphasher = "1.0"
 once_cell = "1.19"
-elsa = "1.10"
 hex = "0.4"
-base64 = "0.22"
 notify = "6.1"
 arboard = "3.3"
 chrono = "0.4"

@@ -8,7 +8,7 @@
   import { jump } from "../lib/ipc";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { shell, PreviewState, pendingScroll } from "$lib/stores";
-  import { debounce } from "lodash";
+  import { debounce } from "$lib/fn";
 
   const appWindow = getCurrentWindow();
   let container: HTMLDivElement;

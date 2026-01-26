@@ -1236,15 +1236,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
-name = "elsa"
-version = "1.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9abf33c656a7256451ebb7d0082c5a471820c31269e49d807c538c252352186e"
-dependencies = [
- "stable_deref_trait",
-]
-
-[[package]]
 name = "embed-resource"
 version = "3.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6559,12 +6550,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arboard",
- "base64 0.22.1",
  "chrono",
  "comemo",
  "dirs 5.0.1",
  "ecow",
- "elsa",
  "enumset",
  "env_logger",
  "git2",
@@ -6584,7 +6573,6 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
- "tauri-plugin-fs",
  "tauri-plugin-opener",
  "tauri-plugin-shell",
  "thiserror 1.0.69",

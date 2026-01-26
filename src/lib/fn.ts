@@ -34,3 +34,52 @@ export const throttle = <T extends never[]>(
     pendingArgs = args;
   };
 };
+export function debounce<T extends any[]>(
+  fn: (...args: T) => any,
+  wait: number,
+  options: { maxWait?: number } = {}
+) {
+  let timeout: any;
+  let maxTimeout: any;
+  let lastArgs: T;
+  let lastCallTime: number | null = null;
+
+  const invoke = () => {
+    clearTimeout(timeout);
+    clearTimeout(maxTimeout);
+    timeout = maxTimeout = null;
+    lastCallTime = null;
+    fn(...lastArgs);
+  };
+
+  const debounced = (...args: T) => {
+    lastArgs = args;
+    const now = Date.now();
+
+    if (lastCallTime === null) {
+      lastCallTime = now;
+    }
+
+    clearTimeout(timeout);
+    timeout = setTimeout(invoke, wait);
+
+    if (options.maxWait && !maxTimeout) {
+      maxTimeout = setTimeout(invoke, options.maxWait);
+    }
+  };
+
+  debounced.cancel = () => {
+    clearTimeout(timeout);
+    clearTimeout(maxTimeout);
+    timeout = maxTimeout = null;
+    lastCallTime = null;
+  };
+
+  debounced.flush = () => {
+    if (timeout) {
+      invoke();
+    }
+  };
+
+  return debounced;
+}

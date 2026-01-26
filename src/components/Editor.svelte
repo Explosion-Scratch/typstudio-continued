@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import type { editor } from "monaco-editor";
-  import debounce from "lodash/debounce";
+  import { debounce } from "../lib/fn";
   import { initMonaco } from "../lib/editor/monaco";
   import type { TypstCompileEvent, TypstSourceDiagnostic } from "$lib/ipc";
   import {

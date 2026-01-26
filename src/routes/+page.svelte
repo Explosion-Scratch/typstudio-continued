@@ -8,7 +8,7 @@
   import LoadingScreen from "../components/LoadingScreen.svelte";
   import { onMount } from "svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
-  import debounce from "lodash/debounce";
+  import { debounce } from "../lib/fn";
 
   const appWindow = getCurrentWindow();
   import SidePanel from "../components/SidePanel.svelte";
